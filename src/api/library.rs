@@ -21,16 +21,23 @@ pub struct Person { pub name: String }
 #[derive(Deserialize)]
 struct LibraryResp { items: Vec<LibraryItem> }
 
+/// `num_results` is capped at 1000 server-side; a short page is the last one.
+const PAGE_SIZE: usize = 1000;
+/// Bound on the paging loop so a server that keeps returning full pages can't spin
+/// forever. 50k titles is far beyond any real library.
+const MAX_PAGES: u32 = 50;
+
 pub async fn fetch_all(c: &Client) -> anyhow::Result<Vec<LibraryItem>> {
     let mut out = Vec::new();
-    for page in 1.. {
+    for page in 1..=MAX_PAGES {
         let r: LibraryResp = c.get(&format!(
-            "1.0/library?num_results=1000&page={page}&response_groups=product_desc,product_attrs,media,contributors"
+            "1.0/library?num_results={PAGE_SIZE}&page={page}&response_groups=product_desc,product_attrs,media,contributors"
         )).await?;
         let n = r.items.len();
         out.extend(r.items);
-        if n < 1000 { break; }
+        if n < PAGE_SIZE { return Ok(out); }
     }
+    tracing::warn!("library paging hit the {MAX_PAGES}-page cap; some titles may be missing");
     Ok(out)
 }
 
