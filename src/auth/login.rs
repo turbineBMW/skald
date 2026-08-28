@@ -1,4 +1,9 @@
-//! Amazon OAuth (PKCE) → `POST /auth/register` device registration, and token refresh.
+//! Amazon OAuth (PKCE) → `POST /auth/register` device registration.
+//!
+//! Registration also hands back a 1-hour bearer token and its refresh token. Skald
+//! stores neither: every call it makes is ADP-signed with the device key, which does
+//! not expire, so a refresh path would be dead code and an extra live credential on
+//! disk. Add both back here if a bearer-auth endpoint is ever needed.
 use super::store::AuthState;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64URL};
 use serde_json::{json, Value};
@@ -85,14 +90,10 @@ impl PendingLogin {
             .into_iter()
             .filter_map(|c| Some((c["Name"].as_str()?.to_owned(), c["Value"].clone())))
             .collect();
-        let expires_in = tok["bearer"]["expires_in"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(3600.0);
         Ok(AuthState {
             locale: self.locale,
             adp_token: tok["mac_dms"]["adp_token"].as_str().unwrap_or_default().to_owned(),
             device_private_key: tok["mac_dms"]["device_private_key"].as_str().unwrap_or_default().to_owned(),
-            access_token: tok["bearer"]["access_token"].as_str().unwrap_or_default().to_owned(),
-            refresh_token: tok["bearer"]["refresh_token"].as_str().unwrap_or_default().to_owned(),
-            expires: now() + expires_in,
             website_cookies: cookies,
             customer_info: s["extensions"]["customer_info"].clone(),
             device_info: s["extensions"]["device_info"].clone(),
@@ -105,8 +106,26 @@ pub fn code_from_redirect(url: &str) -> Option<String> {
     let q = url.split_once('?')?.1;
     q.split('&').find_map(|kv| {
         let (k, v) = kv.split_once('=')?;
-        (k == "openid.oa2.authorization_code").then(|| v.to_owned())
+        (k == "openid.oa2.authorization_code").then(|| percent_decode(v))
     })
+}
+
+/// Decode `%XX` escapes. `+` is deliberately left alone: it is only a space under
+/// form encoding, and a literal `+` in the code would be corrupted by translating it.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match (b[i], b.get(i + 1), b.get(i + 2)) {
+            (b'%', Some(h), Some(l)) => match u8::from_str_radix(&format!("{}{}", *h as char, *l as char), 16) {
+                Ok(byte) => { out.push(byte); i += 3; }
+                Err(_) => { out.push(b[i]); i += 1; }
+            },
+            _ => { out.push(b[i]); i += 1; }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn marketplace_id(locale: &str) -> &'static str {
@@ -118,10 +137,6 @@ fn marketplace_id(locale: &str) -> &'static str {
     }
 }
 
-fn now() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64()
-}
-
 fn urlencoding(s: &str) -> String {
     let mut o = String::new();
     for b in s.bytes() {
@@ -131,4 +146,29 @@ fn urlencoding(s: &str) -> String {
         }
     }
     o
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_and_decodes_the_code() {
+        let base = "https://www.amazon.com/ap/maplanding?openid.assoc_handle=amzn_audible_ios_us";
+        assert_eq!(code_from_redirect(&format!("{base}&openid.oa2.authorization_code=ANabc123")).as_deref(), Some("ANabc123"));
+        // Percent escapes are unwrapped; a literal `+` survives.
+        assert_eq!(code_from_redirect(&format!("{base}&openid.oa2.authorization_code=a%2Fb%3Dc")).as_deref(), Some("a/b=c"));
+        assert_eq!(code_from_redirect(&format!("{base}&openid.oa2.authorization_code=a+b")).as_deref(), Some("a+b"));
+        // A stray `%` is passed through rather than eating the rest of the code.
+        assert_eq!(code_from_redirect(&format!("{base}&openid.oa2.authorization_code=100%")).as_deref(), Some("100%"));
+        assert_eq!(code_from_redirect(base), None);
+        assert_eq!(code_from_redirect("https://www.amazon.com/ap/maplanding"), None);
+    }
+
+    #[test]
+    fn round_trips_with_the_encoder() {
+        for raw in ["plain", "a/b=c", "sp ace", "uni\u{00e7}ode", "+plus+"] {
+            assert_eq!(percent_decode(&urlencoding(raw)), raw);
+        }
+    }
 }
