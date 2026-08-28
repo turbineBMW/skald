@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Skald
+Comment=Audible, natively — with Whispersync
+Exec=skald
+Icon=dev.turbinebmw.Skald
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;GTK;
+Keywords=audible;audiobook;
+StartupNotify=true
+StartupWMClass=skald
