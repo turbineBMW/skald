@@ -106,7 +106,7 @@ pub fn attach(app: &AppRef) {
         if let Some(asin) = asin {
             a.engine.stop();
             let _ = std::fs::remove_file(cache::m4b_path(&asin));
-            let _ = std::fs::remove_file(cache::dir().join(format!("{asin}.aaxc")));
+            for p in cache::scratch_paths(&asin) { let _ = std::fs::remove_file(p); }
             toast(a, "Download removed");
         }
         a.nav.pop_to_tag("library");

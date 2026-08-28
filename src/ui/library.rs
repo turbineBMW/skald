@@ -81,6 +81,7 @@ pub fn attach(app: &AppRef) {
         let mut n = 0;
         if let Ok(rd) = std::fs::read_dir(crate::player::cache::dir()) {
             for e in rd.flatten() {
+                // Also catches `<asin>.part.m4b` left by an interrupted remux.
                 if e.path().extension().is_some_and(|x| x == "m4b" || x == "aaxc") && std::fs::remove_file(e.path()).is_ok() { n += 1; }
             }
         }
