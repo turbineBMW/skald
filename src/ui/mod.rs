@@ -48,12 +48,17 @@ pub struct App {
     pub player_page: player::PlayerPage,
     pub library_page: library::LibraryPage,
     pub mpris: RefCell<Option<Rc<mpris_server::Player>>>,
+    /// Keeps the live Omarchy theme monitor and CSS provider alive.
+    pub _omarchy_theme: Option<crate::omarchy::OmarchyTheme>,
 }
 
 pub type AppRef = Rc<App>;
 
 pub fn build(gtk_app: &adw::Application) {
-    if let Some(display) = gtk::gdk::Display::default() { crate::accent::install_fallback(&display); }
+    let omarchy_theme = gtk::gdk::Display::default().map(|display| {
+        crate::accent::install_fallback(&display);
+        crate::omarchy::OmarchyTheme::install(&display)
+    });
     let open_asin = std::env::args().nth(1).filter(|a| a == "open").and_then(|_| std::env::args().nth(2));
     let nav = adw::NavigationView::new();
     let toasts = adw::ToastOverlay::new();
@@ -76,6 +81,7 @@ pub fn build(gtk_app: &adw::Application) {
         player_page: player::PlayerPage::new(),
         library_page: library::LibraryPage::new(),
         mpris: RefCell::new(None),
+        _omarchy_theme: omarchy_theme,
     });
 
     library::attach(&app);

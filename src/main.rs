@@ -1,4 +1,5 @@
 mod accent;
+mod omarchy;
 mod api;
 mod auth;
 mod player;
