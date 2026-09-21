@@ -7,6 +7,13 @@ A native GTK4/libadwaita Audible client for Linux that **keeps Whispersync worki
 it speaks the same `api.audible.com` protocol as the mobile apps, so pausing on the
 laptop and resuming on the phone lands at the same spot.
 
+## Omarchy themes
+
+When an Omarchy theme is present, Skald takes its window colors, accent, and
+light/dark mode from the active palette and follows `omarchy theme set` live.
+It derives libadwaita colors from `colors.toml` by default; a theme can take
+full control by including a `skald.css` file.
+
 ## Layout
 
 - `src/auth/`   — Amazon device registration, token storage, ADP request signing
