@@ -16,7 +16,8 @@ use std::rc::Rc;
 pub enum Resume {
     /// No book loaded, or the load failed.
     Idle,
-    /// Waiting for the pipeline to preroll (`PlayState::Paused`) before seeking here.
+    /// Started (muted when there is a position to resume); waiting for it to be
+    /// playing before seeking here.
     Prerolling(u64),
     /// Seek issued; waiting for the reported position to actually reach it.
     Seeking(u64),
@@ -127,6 +128,15 @@ pub fn confirm(app: &AppRef, title: &str, body: &str, verb: &str, then: fn(&AppR
     dialog.set_close_response("cancel");
     dialog.connect_response(Some("do"), glib::clone!(#[strong] app, move |_, _| then(&app)));
     omarchy_mobile::modal::present(&dialog, Some(&app.window));
+}
+
+/// `SKALD_DEBUG=1`: the player's messages and resume steps on stderr.
+pub fn debug(what: impl FnOnce() -> String) {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    if *ON.get_or_init(|| std::env::var_os("SKALD_DEBUG").is_some()) {
+        eprintln!("skald: {}", what());
+    }
 }
 
 pub fn toast(app: &App, msg: &str) {

@@ -41,8 +41,14 @@ pub fn set_track(app: &AppRef, item: &crate::api::library::LibraryItem, duration
         .artist(item.authors.iter().map(|a| a.name.clone()).collect::<Vec<_>>())
         .trackid(mpris_server::TrackId::try_from(format!("/dev/turbinebmw/Skald/{}", item.asin.replace(|c: char| !c.is_ascii_alphanumeric(), "_"))).unwrap());
     if let Some(d) = duration_ms { md = md.length(Time::from_millis(d as i64)); }
-    let art = crate::api::covers::path(&item.asin);
-    if art.exists() { md = md.art_url(format!("file://{}", art.display())); }
+    // The cover's web address: a file path is inside Skald's sandbox, where a
+    // media widget outside it (omarchy-mobile's shell) can't read it.
+    if let Some(url) = item.product_images.get("500") {
+        md = md.art_url(url.clone());
+    } else {
+        let art = crate::api::covers::path(&item.asin);
+        if art.exists() { md = md.art_url(format!("file://{}", art.display())); }
+    }
     glib::spawn_future_local(async move { let _ = p.set_metadata(md.build()).await; });
 }
 pub fn set_playing(app: &AppRef, playing: bool) {

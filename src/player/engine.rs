@@ -30,6 +30,7 @@ impl Engine {
     pub fn position_ms(&self) -> Option<u64> { self.play.position().map(|t| t.mseconds()) }
     pub fn duration_ms(&self) -> Option<u64> { self.play.duration().map(|t| t.mseconds()) }
     pub fn set_rate(&self, rate: f64) { self.play.set_rate(rate); }
+    pub fn set_volume(&self, volume: f64) { self.play.set_volume(volume); }
     pub fn skip_ms(&self, delta: i64) {
         if let Some(p) = self.position_ms() {
             self.seek_ms((p as i64 + delta).max(0) as u64);

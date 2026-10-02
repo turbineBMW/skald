@@ -1,4 +1,4 @@
-use super::{App, AppRef, Current, Resume, fmt_ms, toast};
+use super::{App, AppRef, Current, Resume, debug, fmt_ms, toast};
 use crate::api::{chapters, covers, library::LibraryItem, positions};
 use crate::player::cache;
 use adw::prelude::*;
@@ -29,6 +29,8 @@ pub struct PlayerPage {
     pub chapters_page: adw::NavigationPage,
     pub status: gtk::Label,
     pub seeking: Cell<bool>,
+    /// What `poll` last saw the pipeline doing.
+    pub playing: Cell<bool>,
     pub speeds: Vec<f64>,
 }
 
@@ -85,7 +87,7 @@ impl PlayerPage {
             .hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).build();
         let chapters_page = omarchy_mobile::page("Chapters", "chapters", &chapters_scroll);
 
-        Self { page, cover, title, author, chapter, scale, elapsed, remaining, play_btn, speed, speed_index: Cell::new(1), chapter_list, chapters_page, status, seeking: Cell::new(false), speeds }
+        Self { page, cover, title, author, chapter, scale, elapsed, remaining, play_btn, speed, speed_index: Cell::new(1), chapter_list, chapters_page, status, seeking: Cell::new(false), playing: Cell::new(false), speeds }
     }
 }
 
@@ -151,6 +153,7 @@ pub fn attach(app: &AppRef) {
     let bus = app.engine.message_bus();
     let guard = bus.add_watch_local(glib::clone!(#[strong] app, move |_, msg| {
         use gst_play::PlayMessage as M;
+        debug(|| format!("bus: {:?}", msg.structure().map(|s| s.name().to_string())));
         match M::parse(msg) {
             Ok(M::PositionUpdated(p)) => { if let Some(t) = p.position() { on_position(&app, t.mseconds()); } }
             Ok(M::DurationChanged(d)) => { if let Some(t) = d.duration() { app.player_page.scale.set_range(0.0, t.mseconds() as f64); } }
@@ -162,6 +165,51 @@ pub fn attach(app: &AppRef) {
         glib::ControlFlow::Continue
     })).expect("bus watch");
     std::mem::forget(guard);
+
+    // The pipeline's own position, length and state, four times a second, so
+    // the page and the resume follow it even when a GstPlay message doesn't
+    // come (they didn't, on the phone, and the book never started).
+    glib::timeout_add_local(std::time::Duration::from_millis(250), glib::clone!(#[strong] app, move || {
+        poll(&app);
+        glib::ControlFlow::Continue
+    }));
+}
+
+/// What the pipeline says now: drives the resume, the scale and the play button.
+fn poll(app: &AppRef) {
+    if app.current.borrow().is_none() { return; }
+    let playing = app.engine.is_playing();
+    if app.player_page.playing.get() != playing {
+        app.player_page.playing.set(playing);
+        debug(|| format!("playing: {playing}"));
+        app.player_page.play_btn.set_icon_name(if playing { "media-playback-pause-symbolic" } else { "media-playback-start-symbolic" });
+        crate::player::mpris::set_playing(app, playing);
+        if !playing && app.resume.get() == Resume::Armed {
+            if let Some(ms) = app.engine.position_ms() { push_position(app, ms, true); }
+        }
+    }
+    if let Some(d) = app.engine.duration_ms() {
+        let (_, max) = (app.player_page.scale.adjustment().lower(), app.player_page.scale.adjustment().upper());
+        if (max - d as f64).abs() > 1.0 { app.player_page.scale.set_range(0.0, d as f64); }
+    }
+    let Some(ms) = app.engine.position_ms() else { return };
+    // Playing: now the resume seek lands (a flushing seek while paused left
+    // the PipeWire sink never prerolling again).
+    if let Resume::Prerolling(start) = app.resume.get() {
+        if !playing { return; }
+        debug(|| format!("playing at {ms} ms; seeking to {start} ms"));
+        if start > 0 {
+            app.resume.set(Resume::Seeking(start));
+            app.engine.seek_ms(start);
+        } else {
+            app.resume.set(Resume::Armed);
+            app.engine.set_volume(1.0);
+        }
+        let rate = app.player_page.speeds[app.player_page.speed_index.get()];
+        if rate != 1.0 { app.engine.set_rate(rate); }
+        return;
+    }
+    on_position(app, ms);
 }
 
 /// Open a book: ensure it's cached (download+decrypt), then load and resume at the server position.
@@ -220,17 +268,15 @@ pub fn open(app: &AppRef, item: LibraryItem) {
                 *app.current.borrow_mut() = Some(Current { item: item.clone(), acr: lic.acr.clone(), chapters });
                 app.sync.reset();
                 app.player_page.status.set_label("");
-                // The seek is issued from the bus watch once the pipeline reports
-                // Paused (prerolled) — see `on_state`. Seeking on a timer instead
-                // raced preroll, and a dropped seek starts the book at 0.
+                // Play at once, silent when there is a position to resume, and
+                // seek there once it is playing (`poll`); the volume comes back
+                // when the seek has landed (`on_position`). Seeking while paused
+                // left the PipeWire sink never prerolling again, so nothing played.
+                debug(|| format!("open {}: resume at {start} ms", item.asin));
                 app.resume.set(Resume::Prerolling(start));
                 app.engine.load(&path);
-                app.engine.pause(); // preroll without producing audio
-                // Backstop for a pipeline that never reports Paused: seek anyway
-                // rather than leaving the book sitting there unplayable.
-                glib::timeout_add_local_once(std::time::Duration::from_secs(3), glib::clone!(#[strong] app, move || {
-                    if let Resume::Prerolling(start) = app.resume.get() { start_resume(&app, start); }
-                }));
+                if start > 0 { app.engine.set_volume(0.0); }
+                app.engine.play();
                 crate::player::mpris::set_track(&app, &item, app.engine.duration_ms());
             }
             Err(e) => { app.player_page.status.set_label(""); toast(&app, &format!("could not open book: {e:#}")); }
@@ -308,10 +354,11 @@ fn on_position(app: &AppRef, ms: u64) {
     // Arm pushes only once the resume-seek has actually landed. If it silently
     // failed we stay unarmed and sync nothing, which is the safe way to fail:
     // pushing the resulting ~0 would overwrite the server's real position.
-    if let Resume::Seeking(start) = app.resume.get()
-        && ms + LANDED_TOLERANCE_MS >= start
-    {
+    if let Resume::Seeking(start) = app.resume.get() {
+        if ms + LANDED_TOLERANCE_MS < start { return; }
+        debug(|| format!("resume landed at {ms} ms"));
         app.resume.set(Resume::Armed);
+        app.engine.set_volume(1.0);
         app.sync.mark(ms);
     }
     let pp = &app.player_page;
@@ -338,22 +385,9 @@ fn on_state(app: &AppRef, state: gst_play::PlayState) {
     let playing = state == gst_play::PlayState::Playing;
     app.player_page.play_btn.set_icon_name(if playing { "media-playback-pause-symbolic" } else { "media-playback-start-symbolic" });
     crate::player::mpris::set_playing(app, playing);
-    if state != gst_play::PlayState::Paused { return; }
-    // Paused here means prerolled: a seek issued now will land.
-    if let Resume::Prerolling(start) = app.resume.get() {
-        start_resume(app, start);
-        return;
+    if state == gst_play::PlayState::Paused && app.resume.get() == Resume::Armed {
+        if let Some(ms) = app.engine.position_ms() { push_position(app, ms, true); }
     }
-    if let Some(ms) = app.engine.position_ms() { push_position(app, ms, true); }
-}
-
-/// Seek to the resumed position, restore the chosen rate, and start playing.
-fn start_resume(app: &AppRef, start: u64) {
-    app.resume.set(Resume::Seeking(start));
-    app.engine.seek_ms(start);
-    let rate = app.player_page.speeds[app.player_page.speed_index.get()];
-    if rate != 1.0 { app.engine.set_rate(rate); }
-    app.engine.play();
 }
 
 /// Throttled Whispersync push (see `SyncState`). `force` for pause/seek/quit.
