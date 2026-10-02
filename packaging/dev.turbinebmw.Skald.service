@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=dev.turbinebmw.Skald
+Exec=/usr/bin/omarchy-run dev.turbinebmw.Skald --gapplication-service

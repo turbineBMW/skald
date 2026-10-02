@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.turbinebmw.Skald</id>
+  <name>Skald</name>
+  <summary>Audible audiobooks, with Whispersync</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="dev.turbinebmw"><name>turbinebmw</name></developer>
+  <description>
+    <p>Listen to the audiobooks in your own Audible library. Skald speaks the same protocol as Audible's phone apps, so your place syncs both ways: pause here, carry on on another device.</p>
+    <p>Books download once and play offline. Chapters, playback speed, and your progress in each book.</p>
+    <ul>
+      <li>Signs in on Amazon's own page; your password never passes through Skald.</li>
+      <li>Only your own account's books: it is not a way around buying them.</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">dev.turbinebmw.Skald.desktop</launchable>
+  <url type="homepage">https://github.com/turbineBMW/Skald</url>
+  <url type="vcs-browser">https://github.com/turbineBMW/Skald</url>
+  <categories><category>AudioVideo</category><category>Audio</category><category>Player</category></categories>
+</component>

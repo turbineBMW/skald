@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-adw = { version = "0.9", package = "libadwaita", features = ["v1_7"] }
+adw = { version = "0.9", package = "libadwaita", features = ["v1_8"] }
 aes = "0.8"
 anyhow = "1.0.104"
 async-channel = "2.5.0"
@@ -16,6 +16,10 @@ getrandom = "0.4.3"
 gst = { version = "0.25", package = "gstreamer" }
 gst_play = { version = "0.25", package = "gstreamer-play" }
 gtk4 = { version = "0.11", features = ["v4_18"] }
+# The omarchy-mobile app kit (pages, the action row, the app menu, back, the
+# theme): kit/ links to its crates while developing, and the source package
+# carries a copy (packaging/make-source.sh).
+omarchy-mobile = { path = "kit/omarchy-mobile" }
 hex = "0.4.3"
 mpris-server = "0.10.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "cookies", "stream"] }

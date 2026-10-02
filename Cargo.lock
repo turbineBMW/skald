@@ -1701,6 +1701,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "omarchy-mobile"
+version = "0.1.0"
+dependencies = [
+ "gtk4",
+ "libadwaita",
+ "omarchy-theme",
+]
+
+[[package]]
+name = "omarchy-theme"
+version = "0.1.0"
+dependencies = [
+ "gtk4",
+ "libadwaita",
+ "log",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2417,6 +2435,7 @@ dependencies = [
  "hex",
  "libadwaita",
  "mpris-server",
+ "omarchy-mobile",
  "reqwest",
  "rsa",
  "serde",

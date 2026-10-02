@@ -1,4 +1,7 @@
-//! MPRIS2 via `mpris-server` so media keys, the shell widget and `playerctl` work.
+//! MPRIS2 via `mpris-server` so media keys, the shell's media card and `playerctl`
+//! work. The name is org.mpris.MediaPlayer2.dev.turbinebmw.Skald: under
+//! omarchy-mobile's sandbox the app may own only names under its id (the
+//! manifest's `media` permission).
 use crate::ui::AppRef;
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -7,7 +10,7 @@ use mpris_server::{Metadata, PlaybackStatus, Player, Time};
 
 pub fn attach(app: &AppRef) {
     glib::spawn_future_local(glib::clone!(#[strong] app, async move {
-        let player = match Player::builder("skald").identity("Skald").desktop_entry("dev.turbinebmw.Skald")
+        let player = match Player::builder("dev.turbinebmw.Skald").identity("Skald").desktop_entry("dev.turbinebmw.Skald")
             .can_play(true).can_pause(true).can_seek(true).can_control(true).can_go_next(true).can_go_previous(true)
             .can_quit(true).can_raise(true).build().await
         {

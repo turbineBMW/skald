@@ -21,8 +21,12 @@ pub struct PlayerPage {
     pub elapsed: gtk::Label,
     pub remaining: gtk::Label,
     pub play_btn: gtk::Button,
-    pub speed: gtk::DropDown,
+    /// The speed button in the action row, and the chosen speed's index.
+    pub speed: gtk::Button,
+    pub speed_index: Cell<usize>,
     pub chapter_list: gtk::ListBox,
+    /// The chapters, a page of their own (the action row's Chapters).
+    pub chapters_page: adw::NavigationPage,
     pub status: gtk::Label,
     pub seeking: Cell<bool>,
     pub speeds: Vec<f64>,
@@ -30,7 +34,7 @@ pub struct PlayerPage {
 
 impl PlayerPage {
     pub fn new() -> Self {
-        let cover = gtk::Picture::builder().width_request(280).height_request(280).content_fit(gtk::ContentFit::Cover).can_shrink(false)
+        let cover = gtk::Picture::builder().width_request(260).height_request(260).content_fit(gtk::ContentFit::Cover).can_shrink(true)
             .halign(gtk::Align::Center).css_classes(["card"]).build();
         let title = gtk::Label::builder().wrap(true).justify(gtk::Justification::Center).css_classes(["title-2"]).build();
         let author = gtk::Label::builder().css_classes(["dim-label"]).build();
@@ -55,36 +59,33 @@ impl PlayerPage {
         for w in [&prev, &back, &play_btn, &fwd, &next] { controls.append(w); }
 
         let speeds = vec![0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
-        let labels: Vec<String> = speeds.iter().map(|s| format!("{s}×")).collect();
-        let speed = gtk::DropDown::from_strings(&labels.iter().map(String::as_str).collect::<Vec<_>>());
-        speed.set_selected(1);
-        speed.set_tooltip_text(Some("Playback speed"));
+        let speed = gtk::Button::builder().label("1×").action_name("app.speed").build();
 
         let status = gtk::Label::builder().css_classes(["dim-label", "caption"]).build();
 
-        let left = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(8).margin_top(24).margin_bottom(24)
-            .margin_start(24).margin_end(24).valign(gtk::Align::Center).hexpand(true).build();
+        let column = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(8).margin_top(18).margin_bottom(18)
+            .margin_start(18).margin_end(18).valign(gtk::Align::Center).build();
         for w in [cover.upcast_ref::<gtk::Widget>(), title.upcast_ref(), author.upcast_ref(), chapter.upcast_ref(),
-                  times.upcast_ref(), controls.upcast_ref(), status.upcast_ref()] { left.append(w); }
+                  times.upcast_ref(), controls.upcast_ref(), status.upcast_ref()] { column.append(w); }
+        let scroll = gtk::ScrolledWindow::builder().child(&adw::Clamp::builder().child(&column).build())
+            .hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).build();
 
-        let chapter_list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Single).css_classes(["navigation-sidebar"]).build();
-        let side = gtk::ScrolledWindow::builder().child(&chapter_list).width_request(280).build();
-        let split = adw::OverlaySplitView::builder().content(&left).sidebar(&side).sidebar_position(gtk::PackType::End)
-            .min_sidebar_width(240.0).max_sidebar_width(360.0).build();
+        // The page: the title only at the top (back is the shell's edge
+        // swipe); Chapters, the speed and Remove download in the action row.
+        let page = omarchy_mobile::page("Now playing", "player", &scroll);
+        let actions = omarchy_mobile::Actions::new();
+        actions.add("Chapters", "app.chapters");
+        actions.add_button(&speed);
+        actions.add("Remove download", "app.remove-download");
+        omarchy_mobile::set_actions(&page, &actions);
 
-        let header = adw::HeaderBar::new();
-        let menu = gtk::gio::Menu::new();
-        menu.append(Some("Remove download"), Some("app.remove-download"));
-        header.pack_end(&gtk::MenuButton::builder().icon_name("view-more-symbolic").menu_model(&menu).build());
-        header.pack_end(&speed);
-        let toggle = gtk::ToggleButton::builder().icon_name("view-list-symbolic").tooltip_text("Chapters").active(true).build();
-        toggle.bind_property("active", &split, "show-sidebar").bidirectional().sync_create().build();
-        header.pack_end(&toggle);
-        let tv = adw::ToolbarView::builder().content(&split).build();
-        tv.add_top_bar(&header);
-        let page = adw::NavigationPage::builder().title("Now playing").tag("player").child(&tv).build();
+        let chapter_list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Single).css_classes(["boxed-list"]).build();
+        let chapters_scroll = gtk::ScrolledWindow::builder()
+            .child(&adw::Clamp::builder().child(&chapter_list).margin_top(12).margin_bottom(18).margin_start(12).margin_end(12).build())
+            .hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).build();
+        let chapters_page = omarchy_mobile::page("Chapters", "chapters", &chapters_scroll);
 
-        Self { page, cover, title, author, chapter, scale, elapsed, remaining, play_btn, speed, chapter_list, status, seeking: Cell::new(false), speeds }
+        Self { page, cover, title, author, chapter, scale, elapsed, remaining, play_btn, speed, speed_index: Cell::new(1), chapter_list, chapters_page, status, seeking: Cell::new(false), speeds }
     }
 }
 
@@ -99,19 +100,9 @@ pub fn attach(app: &AppRef) {
     add("back", Box::new(|a| { a.engine.skip_ms(-30_000); after_seek(a); }));
     add("forward", Box::new(|a| { a.engine.skip_ms(30_000); after_seek(a); }));
     add("prev-chapter", Box::new(|a| jump_chapter(a, -1)));
-    add("remove-download", Box::new(|a| {
-        if let Some(h) = a.download.borrow_mut().take() { h.abort(); }
-        a.engine.pause();
-        let asin = a.current.borrow_mut().take().map(|c| c.item.asin);
-        if let Some(asin) = asin {
-            a.engine.stop();
-            let _ = std::fs::remove_file(cache::m4b_path(&asin));
-            for p in cache::scratch_paths(&asin) { let _ = std::fs::remove_file(p); }
-            toast(a, "Download removed");
-        }
-        a.nav.pop_to_tag("library");
-        super::library::render(a);
-    }));
+    add("chapters", Box::new(|a| a.nav.push(&a.player_page.chapters_page)));
+    add("speed", Box::new(choose_speed));
+    add("remove-download", Box::new(|a| super::confirm(a, "Remove this download?", "The book is deleted from the phone; it downloads again when you open it.", "Remove", remove_download)));
     // Re-render the library on return so download badges / progress are current.
     app.nav.connect_visible_page_notify(glib::clone!(#[strong] app, move |nav| {
         if nav.visible_page().and_then(|p| p.tag()).as_deref() == Some("library") && !app.library.borrow().is_empty() {
@@ -136,15 +127,12 @@ pub fn attach(app: &AppRef) {
     app.window.add_controller(keys);
 
     let pp = &app.player_page;
-    pp.speed.connect_selected_notify(glib::clone!(#[strong] app, move |dd| {
-        let rate = app.player_page.speeds[dd.selected() as usize];
-        app.engine.set_rate(rate);
-        crate::player::mpris::set_rate(&app, rate);
-    }));
     pp.chapter_list.connect_row_activated(glib::clone!(#[strong] app, move |_, row| {
         let idx = row.index() as usize;
         let start = app.current.borrow().as_ref().and_then(|c| c.chapters.get(idx)).map(|c| c.start_offset_ms);
         if let Some(ms) = start { app.engine.seek_ms(ms); after_seek(&app); }
+        // Back to the player, at that chapter.
+        if app.nav.visible_page().and_then(|p| p.tag()).as_deref() == Some("chapters") { app.nav.pop(); }
     }));
     // Scale: user drag → seek on release.
     let gesture = gtk::GestureClick::new();
@@ -250,6 +238,48 @@ pub fn open(app: &AppRef, item: LibraryItem) {
     }));
 }
 
+/// Delete the open book's download and go back to the library.
+fn remove_download(a: &AppRef) {
+    if let Some(h) = a.download.borrow_mut().take() { h.abort(); }
+    a.engine.pause();
+    let asin = a.current.borrow_mut().take().map(|c| c.item.asin);
+    if let Some(asin) = asin {
+        a.engine.stop();
+        let _ = std::fs::remove_file(cache::m4b_path(&asin));
+        for p in cache::scratch_paths(&asin) { let _ = std::fs::remove_file(p); }
+        toast(a, "Download removed");
+    }
+    a.nav.pop_to_tag("library");
+    super::library::render(a);
+}
+
+/// The playback speeds, in a centred modal (a tap outside keeps the speed).
+fn choose_speed(app: &AppRef) {
+    let list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).css_classes(["boxed-list"]).build();
+    let content = adw::Clamp::builder().child(&list).margin_top(6).margin_bottom(18).margin_start(12).margin_end(12).build();
+    let dialog = omarchy_mobile::modal::dialog("Speed", &content);
+    for (i, s) in app.player_page.speeds.iter().enumerate() {
+        let row = adw::ActionRow::builder().title(format!("{s}×")).activatable(true).build();
+        if i == app.player_page.speed_index.get() {
+            row.add_suffix(&gtk::Image::from_icon_name("object-select-symbolic"));
+        }
+        row.connect_activated(glib::clone!(#[strong] app, #[weak] dialog, move |_| {
+            set_speed(&app, i);
+            dialog.close();
+        }));
+        list.append(&row);
+    }
+    omarchy_mobile::modal::present(&dialog, Some(&app.window));
+}
+
+fn set_speed(app: &AppRef, i: usize) {
+    let rate = app.player_page.speeds[i];
+    app.player_page.speed_index.set(i);
+    app.player_page.speed.set_label(&format!("{rate}×"));
+    app.engine.set_rate(rate);
+    crate::player::mpris::set_rate(app, rate);
+}
+
 pub fn toggle_play(app: &AppRef) {
     if app.current.borrow().is_none() { return; }
     if app.engine.is_playing() { app.engine.pause(); } else { app.engine.play(); }
@@ -321,7 +351,7 @@ fn on_state(app: &AppRef, state: gst_play::PlayState) {
 fn start_resume(app: &AppRef, start: u64) {
     app.resume.set(Resume::Seeking(start));
     app.engine.seek_ms(start);
-    let rate = app.player_page.speeds[app.player_page.speed.selected() as usize];
+    let rate = app.player_page.speeds[app.player_page.speed_index.get()];
     if rate != 1.0 { app.engine.set_rate(rate); }
     app.engine.play();
 }

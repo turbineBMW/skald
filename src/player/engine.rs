@@ -8,6 +8,12 @@ pub struct Engine {
 impl Engine {
     pub fn new() -> Self {
         let play = gst_play::Play::new(None::<gst_play::PlayVideoRenderer>);
+        // PipeWire directly: in omarchy-mobile's sandbox only PipeWire's socket
+        // is there (the `audio` permission), and autoaudiosink would pick the
+        // PulseAudio sink, which finds no server and plays nothing.
+        if let Ok(sink) = gst::ElementFactory::make("pipewiresink").build() {
+            play.pipeline().set_property("audio-sink", &sink);
+        }
         Self { play }
     }
     pub fn load(&self, path: &std::path::Path) {

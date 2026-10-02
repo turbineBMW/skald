@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Skald
+Comment=Audible audiobooks, with Whispersync
+Exec=omarchy-run dev.turbinebmw.Skald
+Icon=dev.turbinebmw.Skald
+Categories=AudioVideo;Audio;Player;GTK;
+Keywords=audible;audiobook;
+StartupNotify=false
+DBusActivatable=true

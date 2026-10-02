@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Skald, one colour (omarchy-mobile tints it): headphones over an open book. -->
+  <path d="M22 70V62a42 42 0 0 1 84 0v8" fill="none" stroke="#000" stroke-width="9" stroke-linecap="round"/>
+  <rect x="14" y="66" width="20" height="36" rx="8" fill="#000"/>
+  <rect x="94" y="66" width="20" height="36" rx="8" fill="#000"/>
+  <path d="M42 58c8-4 16-4 22 2v46c-6-6-14-6-22-2z" fill="#000"/>
+  <path d="M86 58c-8-4-16-4-22 2v46c6-6 14-6 22-2z" fill="#000" fill-opacity=".55"/>
+</svg>

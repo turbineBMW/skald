@@ -1,0 +1,9 @@
+# Skald's manifest for omarchy-mobile's sandbox (omarchy-run): what it may reach.
+id = "dev.turbinebmw.Skald"
+name = "Skald"
+exec = "/usr/lib/omarchy/apps/dev.turbinebmw.Skald/skald"
+runtime = "native"
+architecture = "aarch64"
+# network: Audible's API, its CDN and the Amazon sign-in page.
+# audio: playing books. media: its MPRIS name for the shell's media controls.
+permissions = ["network", "audio", "media"]

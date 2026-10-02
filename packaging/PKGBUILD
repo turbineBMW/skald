@@ -1,0 +1,35 @@
+# Skald for omarchy-mobile: a sandboxed app (docs/app-repos.md in
+# omarchy-mobile), published in the turbinebmw repo. Build with
+# packaging/make-source.sh first.
+pkgname=dev.turbinebmw.skald
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Skald: Audible audiobooks, with Whispersync"
+arch=(aarch64)
+url="https://github.com/turbineBMW/Skald"
+license=(MIT)
+depends=(omarchy-mobile-apps gtk4 libadwaita webkitgtk-6.0 gstreamer gst-plugins-base gst-plugins-good gst-libav gst-plugin-pipewire ffmpeg)
+makedepends=(rust cmake)
+source=("skald-src.tar.gz")
+sha256sums=('SKIP')
+
+pkgver() { printf '0.1.0.%s' "$(cat "$srcdir/skald/packaging/version" | tr - .)"; }
+
+build() {
+  cd skald
+  cargo build --release --frozen
+}
+
+package() {
+  local id=dev.turbinebmw.Skald
+  cd skald
+  install -Dm755 target/release/skald "$pkgdir/usr/lib/omarchy/apps/$id/skald"
+  install -Dm644 packaging/manifest.toml "$pkgdir/usr/share/omarchy/apps/$id/manifest.toml"
+  install -Dm644 packaging/$id.desktop -t "$pkgdir/usr/share/applications/"
+  install -Dm644 packaging/$id.service -t "$pkgdir/usr/share/dbus-1/services/"
+  install -Dm644 data/$id.metainfo.xml -t "$pkgdir/usr/share/metainfo/"
+  for n in 16 32 48 64 128 256 512; do
+    install -Dm644 data/icons/skald-$n.png "$pkgdir/usr/share/icons/hicolor/${n}x${n}/apps/$id.png"
+  done
+  install -Dm644 data/icons/$id-symbolic.svg -t "$pkgdir/usr/share/icons/hicolor/scalable/apps/"
+}

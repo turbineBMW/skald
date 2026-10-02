@@ -22,20 +22,17 @@ pub fn show(app: &AppRef) {
     }
     web.set_vexpand(true);
 
-    let header = adw::HeaderBar::new();
-    header.set_title_widget(Some(&adw::WindowTitle::new("Sign in to Audible", "")));
-    let names: Vec<&str> = LOCALES.iter().map(|l| l.1).collect();
-    let picker = gtk::DropDown::from_strings(&names);
-    picker.set_tooltip_text(Some("Audible marketplace"));
-    picker.connect_selected_notify(glib::clone!(#[weak] web, #[strong] pending, move |dd| {
-        let p = PendingLogin::start(LOCALES[dd.selected() as usize].0);
-        web.load_uri(&p.url);
-        *pending.borrow_mut() = Some(p);
+    // The title only at the top; the marketplace in the action row, as a
+    // modal list (omarchy-mobile's app guidelines).
+    let page = omarchy_mobile::page("Sign in to Audible", "login", &web);
+    page.set_can_pop(false);
+    let actions = omarchy_mobile::Actions::new();
+    let market = gtk::Button::with_label(LOCALES[0].1);
+    market.connect_clicked(glib::clone!(#[strong] app, #[weak] web, #[strong] pending, move |button| {
+        choose_marketplace(&app, button, &web, &pending);
     }));
-    header.pack_end(&picker);
-    let tv = adw::ToolbarView::builder().content(&web).build();
-    tv.add_top_bar(&header);
-    let page = adw::NavigationPage::builder().title("Sign in").child(&tv).tag("login").can_pop(false).build();
+    actions.add_button(&market);
+    omarchy_mobile::set_actions(&page, &actions);
 
     web.connect_decide_policy(glib::clone!(#[strong] app, #[strong] pending, move |_wv, decision, kind| {
         if kind != webkit6::PolicyDecisionType::NavigationAction { return false; }
@@ -66,4 +63,25 @@ pub fn show(app: &AppRef) {
 
     web.load_uri(&url);
     app.nav.push(&page);
+}
+
+/// The Audible marketplaces in a centred modal; picking one starts the sign-in
+/// again there.
+fn choose_marketplace(app: &AppRef, button: &gtk::Button, web: &webkit6::WebView, pending: &Rc<RefCell<Option<PendingLogin>>>) {
+    let list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).css_classes(["boxed-list"]).build();
+    let content = adw::Clamp::builder().child(&list).margin_top(6).margin_bottom(18).margin_start(12).margin_end(12).build();
+    let scroll = gtk::ScrolledWindow::builder().child(&content).hscrollbar_policy(gtk::PolicyType::Never).propagate_natural_height(true).build();
+    let dialog = omarchy_mobile::modal::dialog("Marketplace", &scroll);
+    for (code, name) in LOCALES {
+        let row = adw::ActionRow::builder().title(*name).activatable(true).build();
+        row.connect_activated(glib::clone!(#[weak] web, #[weak] button, #[weak] dialog, #[strong] pending, move |_| {
+            let p = PendingLogin::start(code);
+            web.load_uri(&p.url);
+            *pending.borrow_mut() = Some(p);
+            button.set_label(name);
+            dialog.close();
+        }));
+        list.append(&row);
+    }
+    omarchy_mobile::modal::present_popup(&dialog, Some(&app.window));
 }

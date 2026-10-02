@@ -53,22 +53,18 @@ impl LibraryPage {
         content.add_named(&loading, Some("loading"));
         content.add_named(&status, Some("status"));
         content.set_visible_child_name("status");
-        let search = gtk::SearchEntry::builder().placeholder_text("Search library").width_chars(28).build();
-        let header = adw::HeaderBar::new();
-        header.set_title_widget(Some(&search));
-        header.pack_end(&spinner);
-        let refresh_btn = gtk::Button::from_icon_name("view-refresh-symbolic");
-        refresh_btn.set_action_name(Some("app.refresh"));
-        refresh_btn.set_tooltip_text(Some("Refresh library"));
-        header.pack_start(&refresh_btn);
-        let menu = gtk::gio::Menu::new();
-        menu.append(Some("Clear downloads"), Some("app.clear-downloads"));
-        menu.append(Some("Sign out"), Some("app.sign-out"));
-        menu.append(Some("About Skald"), Some("app.about"));
-        header.pack_end(&gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu).primary(true).build());
-        let tv = adw::ToolbarView::builder().content(&content).build();
-        tv.add_top_bar(&header);
-        let page = adw::NavigationPage::builder().title("Library").tag("library").child(&tv).build();
+        // The search field at the bottom, in thumb reach: nothing to press in
+        // the top half (omarchy-mobile's app guidelines). Refresh, Clear
+        // downloads, Sign out and About are in the app menu.
+        let search = gtk::SearchEntry::builder().placeholder_text("Search library").hexpand(true)
+            .input_purpose(gtk::InputPurpose::FreeForm).build();
+        let page = omarchy_mobile::page("Library", "library", &content);
+        if let Some(tv) = page.child().and_downcast::<adw::ToolbarView>() {
+            let bar = gtk::Box::builder().spacing(8).margin_start(12).margin_end(12).margin_top(6).margin_bottom(6).build();
+            bar.append(&search);
+            bar.append(&spinner);
+            tv.add_bottom_bar(&bar);
+        }
         Self { page, flow, recent_section, recent, spinner, search, content, status, retry }
     }
 
@@ -98,33 +94,13 @@ pub fn attach(app: &AppRef) {
     };
     add("refresh", Box::new(refresh));
     add("about", Box::new(|a| {
-        adw::AboutDialog::builder().application_name("Skald").application_icon("dev.turbinebmw.Skald")
+        let about = adw::AboutDialog::builder().application_name("Skald").application_icon("dev.turbinebmw.Skald")
             .version(env!("CARGO_PKG_VERSION")).developer_name("turbinebmw")
-            .comments("A native Audible client that keeps Whispersync working.").build().present(Some(&a.window));
+            .comments("A native Audible client that keeps Whispersync working.").build();
+        omarchy_mobile::modal::present(&about, Some(&a.window));
     }));
-    add("sign-out", Box::new(|a| {
-        a.engine.pause();
-        *a.client.borrow_mut() = None;
-        *a.current.borrow_mut() = None;
-        let _ = std::fs::remove_file(crate::auth::store::path());
-        while let Some(c) = a.library_page.flow.first_child() { a.library_page.flow.remove(&c); }
-        a.nav.pop_to_tag("library");
-        super::login::show(a);
-    }));
-    add("clear-downloads", Box::new(|a| {
-        a.engine.pause();
-        *a.current.borrow_mut() = None;
-        let mut n = 0;
-        if let Ok(rd) = std::fs::read_dir(crate::player::cache::dir()) {
-            for e in rd.flatten() {
-                // Also catches `<asin>.part.m4b` left by an interrupted remux.
-                if e.path().extension().is_some_and(|x| x == "m4b" || x == "aaxc") && std::fs::remove_file(e.path()).is_ok() { n += 1; }
-            }
-        }
-        toast(a, &format!("Removed {n} downloaded book{}", if n == 1 { "" } else { "s" }));
-        a.nav.pop_to_tag("library");
-        render(a);
-    }));
+    add("sign-out", Box::new(|a| super::confirm(a, "Sign out?", "Skald forgets this device's Audible sign-in. Downloaded books stay.", "Sign out", sign_out)));
+    add("clear-downloads", Box::new(|a| super::confirm(a, "Clear downloads?", "Every downloaded book is deleted; it downloads again when you open it.", "Clear", clear_downloads)));
 
     app.library_page.search.connect_search_changed(glib::clone!(#[strong] app, move |e| {
         let q = e.text().to_lowercase();
@@ -149,7 +125,34 @@ pub fn attach(app: &AppRef) {
     open_child(&app.library_page.flow);
 }
 
-/// Dev helper (`skald open ASIN`): open a book as soon as the library has loaded.
+/// Forget the sign-in and show the sign-in page.
+fn sign_out(a: &AppRef) {
+    a.engine.pause();
+    *a.client.borrow_mut() = None;
+    *a.current.borrow_mut() = None;
+    let _ = std::fs::remove_file(crate::auth::store::path());
+    while let Some(c) = a.library_page.flow.first_child() { a.library_page.flow.remove(&c); }
+    a.nav.pop_to_tag("library");
+    super::login::show(a);
+}
+
+/// Delete every downloaded book.
+fn clear_downloads(a: &AppRef) {
+    a.engine.pause();
+    *a.current.borrow_mut() = None;
+    let mut n = 0;
+    if let Ok(rd) = std::fs::read_dir(crate::player::cache::dir()) {
+        for e in rd.flatten() {
+            // Also catches `<asin>.part.m4b` left by an interrupted remux.
+            if e.path().extension().is_some_and(|x| x == "m4b" || x == "aaxc") && std::fs::remove_file(e.path()).is_ok() { n += 1; }
+        }
+    }
+    toast(a, &format!("Removed {n} downloaded book{}", if n == 1 { "" } else { "s" }));
+    a.nav.pop_to_tag("library");
+    render(a);
+}
+
+/// Dev helper (`SKALD_OPEN=ASIN`): open a book as soon as the library has loaded.
 pub fn open_when_loaded(app: &AppRef, asin: String) {
     glib::timeout_add_local(std::time::Duration::from_millis(200), glib::clone!(#[strong] app, move || {
         let item = app.library.borrow().iter().find(|i| i.asin == asin).cloned();

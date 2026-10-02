@@ -48,25 +48,19 @@ pub struct App {
     pub player_page: player::PlayerPage,
     pub library_page: library::LibraryPage,
     pub mpris: RefCell<Option<Rc<mpris_server::Player>>>,
-    /// Keeps the live Omarchy theme monitor and CSS provider alive.
-    pub _omarchy_theme: Option<crate::omarchy::OmarchyTheme>,
 }
 
 pub type AppRef = Rc<App>;
 
 pub fn build(gtk_app: &adw::Application) {
-    let omarchy_theme = gtk::gdk::Display::default().map(|display| {
-        crate::accent::install_fallback(&display);
-        crate::omarchy::OmarchyTheme::install(&display)
-    });
-    let open_asin = std::env::args().nth(1).filter(|a| a == "open").and_then(|_| std::env::args().nth(2));
+    // Dev hook: SKALD_OPEN=<ASIN> opens that book once the library is in.
+    let open_asin = std::env::var("SKALD_OPEN").ok().filter(|a| !a.is_empty());
     let nav = adw::NavigationView::new();
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&nav));
-    let window = adw::ApplicationWindow::builder()
-        .application(gtk_app).title("Skald")
-        .default_width(1000).default_height(700)
-        .content(&toasts).build();
+    // The phone's window (omarchy-mobile kit): pages carry the title only;
+    // back is the shell's edge swipe, the menu its home bar.
+    let window = omarchy_mobile::window(gtk_app, "Skald", &toasts);
 
     let app: AppRef = Rc::new(App {
         window: window.clone(), nav: nav.clone(), toasts,
@@ -81,12 +75,17 @@ pub fn build(gtk_app: &adw::Application) {
         player_page: player::PlayerPage::new(),
         library_page: library::LibraryPage::new(),
         mpris: RefCell::new(None),
-        _omarchy_theme: omarchy_theme,
     });
 
     library::attach(&app);
     player::attach(&app);
     crate::player::mpris::attach(&app);
+    omarchy_mobile::connect_back(gtk_app, &nav);
+    omarchy_mobile::set_menu(
+        gtk_app,
+        &[&[("Refresh", "app.refresh"), ("Clear downloads", "app.clear-downloads")], &[("Sign out", "app.sign-out"), ("About Skald", "app.about")]],
+        None,
+    );
 
     // Push final position on close; block briefly so the request gets out.
     window.connect_close_request(glib::clone!(#[strong] app, move |_| {
@@ -117,6 +116,17 @@ pub fn build(gtk_app: &adw::Application) {
         },
         _ => login::show(&app),
     }
+}
+
+/// A destructive action, confirmed in a centred modal first (omarchy-mobile's
+/// app guidelines: destructive actions ask, and a tap outside cancels).
+pub fn confirm(app: &AppRef, title: &str, body: &str, verb: &str, then: fn(&AppRef)) {
+    let dialog = adw::AlertDialog::new(Some(title), Some(body));
+    dialog.add_responses(&[("cancel", "Cancel"), ("do", verb)]);
+    dialog.set_response_appearance("do", adw::ResponseAppearance::Destructive);
+    dialog.set_close_response("cancel");
+    dialog.connect_response(Some("do"), glib::clone!(#[strong] app, move |_, _| then(&app)));
+    omarchy_mobile::modal::present(&dialog, Some(&app.window));
 }
 
 pub fn toast(app: &App, msg: &str) {

@@ -1,5 +1,3 @@
-mod accent;
-mod omarchy;
 mod api;
 mod auth;
 mod player;
@@ -22,9 +20,23 @@ fn main() -> anyhow::Result<()> {
         _ => {}
     }
     gst::init()?;
-    let app = adw::Application::builder().application_id(APP_ID).flags(gtk4::gio::ApplicationFlags::NON_UNIQUE).build();
-    app.connect_activate(ui::build);
-    app.run_with_args::<&str>(&[]);
+    // One instance, owning its app id on the session bus: the omarchy-mobile
+    // shell reads its app menu and calls go-back there, and D-Bus activation
+    // starts it (`--gapplication-service`), so GApplication gets the arguments.
+    let app = adw::Application::builder().application_id(APP_ID).build();
+    let theme = std::cell::RefCell::new(None);
+    app.connect_startup(move |app| {
+        // The phone kit: the Omarchy theme, live, and the phone's styling.
+        theme.replace(Some(omarchy_mobile::init(app)));
+    });
+    app.connect_activate(|app| {
+        if let Some(window) = app.active_window() {
+            window.present();
+            return;
+        }
+        ui::build(app);
+    });
+    app.run();
     Ok(())
 }
 

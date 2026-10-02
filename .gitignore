@@ -1,3 +1,5 @@
 target/
 probe/.venv/
 probe/auth.json
+packaging/skald-src.tar.gz
+packaging/version
