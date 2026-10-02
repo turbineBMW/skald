@@ -69,7 +69,9 @@ device, streams the books that account already owns, and reads and writes the sa
 last-position annotations the official apps do. It is not a downloader for content you
 have not bought, and it strips nothing that Audible's own apps do not.
 
-Auth lives at `~/.config/skald/auth.json`, mode 0600 — it holds the device private key
+The sign-in lives in the keyring (the Secret Service; under omarchy-mobile, the Secret
+portal's encrypted keyring in the app's own home), or without one in
+`~/.config/skald/auth.json`, mode 0600. It holds the device private key
 and the ADP token (no expiry), so treat it exactly like a password. Signing out deletes
 it, but the device stays registered with Amazon until you remove it under "Manage your
 devices".

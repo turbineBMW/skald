@@ -22,6 +22,8 @@ gtk4 = { version = "0.11", features = ["v4_18"] }
 omarchy-mobile = { path = "kit/omarchy-mobile" }
 hex = "0.4.3"
 mpris-server = "0.10.0"
+# The sign-in in the keyring (the Secret portal under omarchy-mobile's sandbox).
+oo7 = "0.6"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "cookies", "stream"] }
 rsa = { version = "0.9.10", features = ["pem", "sha2"] }
 serde = { version = "1.0.229", features = ["derive"] }

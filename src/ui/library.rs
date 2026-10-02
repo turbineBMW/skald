@@ -130,7 +130,7 @@ fn sign_out(a: &AppRef) {
     a.engine.pause();
     *a.client.borrow_mut() = None;
     *a.current.borrow_mut() = None;
-    let _ = std::fs::remove_file(crate::auth::store::path());
+    crate::rt::rt().spawn(crate::auth::store::AuthState::forget());
     while let Some(c) = a.library_page.flow.first_child() { a.library_page.flow.remove(&c); }
     a.nav.pop_to_tag("library");
     super::login::show(a);

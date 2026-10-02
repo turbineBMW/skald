@@ -110,7 +110,8 @@ pub fn build(gtk_app: &adw::Application) {
     nav.push(&app.library_page.page);
     window.present();
 
-    match crate::auth::store::AuthState::load() {
+    // From the keyring: a moment's D-Bus round trip, before the first page.
+    match crate::rt::rt().block_on(crate::auth::store::AuthState::load()) {
         Ok(Some(state)) => match Client::new(state) {
             Ok(c) => { *app.client.borrow_mut() = Some(c); library::refresh(&app); if let Some(asin) = open_asin { library::open_when_loaded(&app, asin); } }
             Err(e) => toast(&app, &format!("auth error: {e}")),

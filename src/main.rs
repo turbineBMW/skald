@@ -48,14 +48,14 @@ async fn cli_login(locale: &str) -> anyhow::Result<()> {
     std::io::stdin().read_line(&mut line)?;
     let code = auth::login::code_from_redirect(line.trim()).ok_or_else(|| anyhow::anyhow!("no authorization code in that URL"))?;
     let state = pending.register(&code).await?;
-    state.save()?;
-    println!("registered; saved {}", auth::store::path().display());
+    state.save().await?;
+    println!("registered; saved in the keyring");
     Ok(())
 }
 
 /// `skald probe [ASIN [POSITION_MS]]`
 async fn cli_probe(asin: Option<&String>, ms: Option<&String>) -> anyhow::Result<()> {
-    let state = auth::store::AuthState::load()?.ok_or_else(|| anyhow::anyhow!("not logged in; run `skald login`"))?;
+    let state = auth::store::AuthState::load().await?.ok_or_else(|| anyhow::anyhow!("not logged in; run `skald login`"))?;
     let c = api::client::Client::new(state)?;
     let Some(asin) = asin else {
         let lib = api::library::fetch_all(&c).await?;
@@ -82,7 +82,7 @@ async fn cli_probe(asin: Option<&String>, ms: Option<&String>) -> anyhow::Result
 
 #[allow(dead_code)]
 async fn cli_chapters(asin: &str) -> anyhow::Result<()> {
-    let state = auth::store::AuthState::load()?.unwrap();
+    let state = auth::store::AuthState::load().await?.unwrap();
     let c = api::client::Client::new(state)?;
     let lic = api::license::request(&c, asin).await?;
     println!("{}", serde_json::to_string_pretty(&lic.content_metadata.chapter_info)?);
@@ -91,7 +91,7 @@ async fn cli_chapters(asin: &str) -> anyhow::Result<()> {
 
 /// `skald download ASIN` — fetch + decrypt into the cache.
 async fn cli_download(asin: &str) -> anyhow::Result<()> {
-    let state = auth::store::AuthState::load()?.ok_or_else(|| anyhow::anyhow!("not logged in"))?;
+    let state = auth::store::AuthState::load().await?.ok_or_else(|| anyhow::anyhow!("not logged in"))?;
     let c = api::client::Client::new(state)?;
     let mut last = 0;
     let (path, lic) = player::cache::ensure(&c, asin, |done, total| {
@@ -105,7 +105,7 @@ async fn cli_download(asin: &str) -> anyhow::Result<()> {
 /// `skald play ASIN [SECS]` — headless smoke test: resume from server position, play SECS, push position.
 async fn cli_play(asin: &str, secs: u64) -> anyhow::Result<()> {
     gst::init()?;
-    let state = auth::store::AuthState::load()?.ok_or_else(|| anyhow::anyhow!("not logged in"))?;
+    let state = auth::store::AuthState::load().await?.ok_or_else(|| anyhow::anyhow!("not logged in"))?;
     let c = api::client::Client::new(state)?;
     let (path, lic) = player::cache::ensure(&c, asin, |_, _| {}).await?;
     let start = lic.content_metadata.last_position_heard.as_ref().map(|p| p.position_ms).unwrap_or(0);

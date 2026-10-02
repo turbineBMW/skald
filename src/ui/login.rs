@@ -45,7 +45,8 @@ pub fn show(app: &AppRef) {
         glib::spawn_future_local(glib::clone!(#[strong] app, async move {
             match crate::rt::io(async move { p.register(&code).await }).await {
                 Ok(state) => {
-                    if let Err(e) = state.save() { toast(&app, &format!("could not save auth: {e}")); }
+                    let saving = state.clone();
+                    if let Err(e) = crate::rt::io(async move { saving.save().await }).await { toast(&app, &format!("could not save the sign-in: {e:#}")); }
                     match crate::api::client::Client::new(state) {
                         Ok(c) => {
                             *app.client.borrow_mut() = Some(c);
