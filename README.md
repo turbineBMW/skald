@@ -7,12 +7,18 @@ A native GTK4/libadwaita Audible client for Linux that **keeps Whispersync worki
 it speaks the same `api.audible.com` protocol as the mobile apps, so pausing on the
 laptop and resuming on the phone lands at the same spot.
 
+## On omarchy-mobile
+
+Skald is packaged for omarchy-mobile phones as a sandboxed app (`packaging/`): the
+manifest asks for the network, sound and media controls; `packaging/make-source.sh`
+makes the source package (the omarchy-mobile kit's crates copied in from `kit/`, every
+crate vendored) and `packaging/PKGBUILD` builds it. Dev hook: `SKALD_OPEN=<ASIN>`.
+
 ## Omarchy themes
 
 When an Omarchy theme is present, Skald takes its window colors, accent, and
-light/dark mode from the active palette and follows `omarchy theme set` live.
-It derives libadwaita colors from `colors.toml` by default; a theme can take
-full control by including a `skald.css` file.
+light/dark mode from the active palette and follows `omarchy theme set` live, through
+the omarchy-mobile kit's theme crate (`kit/omarchy-theme`).
 
 ## Layout
 
@@ -35,7 +41,7 @@ uv run probe.py ASIN MS   # writes a position — check the phone app picks it u
 
 ```sh
 cargo run                 # GUI; first launch shows the Amazon sign-in page
-cargo run -- open ASIN    # GUI, jump straight into a book (dev)
+SKALD_OPEN=ASIN cargo run # GUI, jump straight into a book (dev)
 cargo run -- login [locale] / probe [ASIN [MS]] / chapters ASIN / download ASIN / play ASIN [SECS]
 ```
 
@@ -63,7 +69,9 @@ last-position annotations the official apps do. It is not a downloader for conte
 have not bought, and it strips nothing that Audible's own apps do not.
 
 Auth lives at `~/.config/skald/auth.json`, mode 0600 — it holds the device private key
-and the refresh token, so treat it exactly like a password.
+and the ADP token (no expiry), so treat it exactly like a password. Signing out deletes
+it, but the device stays registered with Amazon until you remove it under "Manage your
+devices".
 
 ## Licence
 
