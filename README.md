@@ -12,7 +12,8 @@ laptop and resuming on the phone lands at the same spot.
 Skald is packaged for omarchy-mobile phones as a sandboxed app (`packaging/`): the
 manifest asks for the network, sound and media controls; `packaging/make-source.sh`
 makes the source package (the omarchy-mobile kit's crates copied in from `kit/`, every
-crate vendored) and `packaging/PKGBUILD` builds it. Dev hook: `SKALD_OPEN=<ASIN>`.
+crate vendored) and `packaging/PKGBUILD` builds it. Dev hooks: `SKALD_OPEN=<ASIN>` opens a
+book, `SKALD_DEBUG=1` logs the player's messages and resume steps.
 
 ## Omarchy themes
 
