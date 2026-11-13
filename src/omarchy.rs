@@ -1,4 +1,10 @@
 //! Follow the active Omarchy desktop palette and reload it live.
+//!
+//! A theme may also ship its own `skald.css`, either by hand or generated from
+//! `~/.config/omarchy/themed/skald.css.tpl`. It is appended after the CSS
+//! derived from `colors.toml`, so whatever it states wins and whatever it
+//! leaves out keeps the palette's value: a file can restate every color, or
+//! carry a single line such as `:root { --skald-sidebar-opacity: 0.8; }`.
 
 use adw::prelude::*;
 use gtk::{gio, glib};
@@ -12,14 +18,24 @@ use std::time::Duration;
 
 const SETTLE: Duration = Duration::from_millis(120);
 
+type OpacityCallback = Box<dyn Fn(f32)>;
+
+/// How opaque the chapter sidebar's background is, 0 to 1. Skald's built-in
+/// stylesheet defaults it to 1; only a theme's `skald.css` changes it.
+pub const SIDEBAR_OPACITY: &str = "--skald-sidebar-opacity";
+
 /// Owns the CSS provider and file monitor for the lifetime of the app.
 pub struct OmarchyTheme {
-    _inner: Rc<Inner>,
+    inner: Rc<Inner>,
 }
 
 struct Inner {
     provider: gtk::CssProvider,
     monitor: RefCell<Option<gio::FileMonitor>>,
+    /// `--skald-sidebar-opacity` as the active theme sets it, 1 when it
+    /// doesn't. Worked out on every reload.
+    sidebar_opacity: Cell<f32>,
+    on_sidebar_opacity: RefCell<Option<OpacityCallback>>,
 }
 
 impl OmarchyTheme {
@@ -28,6 +44,8 @@ impl OmarchyTheme {
         let inner = Rc::new(Inner {
             provider: gtk::CssProvider::new(),
             monitor: RefCell::new(None),
+            sidebar_opacity: Cell::new(1.0),
+            on_sidebar_opacity: RefCell::new(None),
         });
         gtk::style_context_add_provider_for_display(
             display,
@@ -42,7 +60,15 @@ impl OmarchyTheme {
         });
         inner.watch();
         inner.reload();
-        Self { _inner: inner }
+        Self { inner }
+    }
+
+    /// Call `f` with the theme's sidebar opacity now and again whenever a
+    /// theme change alters it. The window needs it to know when to clear its
+    /// own background, which GTK cannot report for a CSS custom property.
+    pub fn connect_sidebar_opacity(&self, f: impl Fn(f32) + 'static) {
+        f(self.inner.sidebar_opacity.get());
+        self.inner.on_sidebar_opacity.replace(Some(Box::new(f)));
     }
 }
 
@@ -51,11 +77,22 @@ impl Inner {
         let theme = load(&glib::home_dir());
         self.provider
             .load_from_string(theme.as_ref().map_or("", |theme| theme.css.as_str()));
+        // This provider sits above Skald's built-in default of 1, so the
+        // theme's value is the one GTK uses whenever it states one.
+        let opacity = theme
+            .as_ref()
+            .and_then(|theme| opacity_in(&theme.css, SIDEBAR_OPACITY))
+            .unwrap_or(1.0);
         adw::StyleManager::default().set_color_scheme(match theme {
             Some(theme) if theme.light => adw::ColorScheme::ForceLight,
             Some(_) => adw::ColorScheme::ForceDark,
             None => adw::ColorScheme::Default,
         });
+        if self.sidebar_opacity.replace(opacity) != opacity
+            && let Some(f) = self.on_sidebar_opacity.borrow().as_ref()
+        {
+            f(opacity);
+        }
     }
 
     /// Omarchy replaces the whole theme directory, so watch its stable parent.
@@ -113,15 +150,59 @@ struct Theme {
 }
 
 fn load(home: &Path) -> Option<Theme> {
-    let dir = theme_dir(home);
+    load_in(&theme_dir(home))
+}
+
+fn load_in(dir: &Path) -> Option<Theme> {
     let colors = fs::read_to_string(dir.join("colors.toml")).ok()?;
     let palette = Palette::resolve(&colors, dir.join("light.mode").exists());
-    // A theme may provide app-specific CSS, just as it can for Rustle.
-    let css = fs::read_to_string(dir.join("skald.css")).unwrap_or_else(|_| palette.to_css());
+    // A theme may provide app-specific CSS, just as it can for Rustle. It is
+    // layered over the derived palette rather than replacing it, so a partial
+    // file only changes what it names.
+    let mut css = palette.to_css();
+    if let Ok(own) = fs::read_to_string(dir.join("skald.css")) {
+        css.push_str("/* The theme's own skald.css. */\n");
+        css.push_str(&own);
+    }
     Some(Theme {
         css,
         light: palette.light,
     })
+}
+
+/// The last value `name` is given anywhere in `css`, as an opacity clamped
+/// to 0..=1. Comments are skipped; selectors are not checked, since the
+/// built-in rule reads the token wherever the cascade puts it. Only a plain
+/// number counts: GTK's `alpha()` rejects anything else, percentages
+/// included, so those are treated as unset here too.
+fn opacity_in(css: &str, name: &str) -> Option<f32> {
+    let mut found = None;
+    let mut rest = css;
+    while let Some(index) = rest.find(['/', '-']) {
+        let tail = &rest[index..];
+        if let Some(comment) = tail.strip_prefix("/*") {
+            rest = comment.find("*/").map_or("", |end| &comment[end + 2..]);
+            continue;
+        }
+        let Some(after) = tail.strip_prefix(name) else {
+            rest = &tail[1..];
+            continue;
+        };
+        // `--skald-sidebar-opacity-foo` is a different property.
+        let Some(value) = after.trim_start().strip_prefix(':') else {
+            rest = after;
+            continue;
+        };
+        let end = value.find([';', '}', '\n']).unwrap_or(value.len());
+        let parsed = value[..end].trim().parse::<f32>().ok();
+        // GTK lets this last declaration win even when alpha() rejects it
+        // (a percentage or a typo unsets the background), so it reads as
+        // opaque rather than falling back to an earlier valid value, which
+        // would clear the window behind a sidebar with no background.
+        found = Some(parsed.filter(|o| o.is_finite()).map_or(1.0, |o| o.clamp(0.0, 1.0)));
+        rest = &value[end..];
+    }
+    found
 }
 
 struct Palette {
@@ -523,5 +604,88 @@ mod tests {
         assert!(palette.light);
         assert!(css.contains("--window-bg-color: #fafafa;"));
         assert!(css.contains("--accent-bg-color: #3366ff;"));
+    }
+
+    /// A scratch theme directory, removed again when dropped.
+    struct ThemeDir(PathBuf);
+
+    impl ThemeDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("skald-{name}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("colors.toml"),
+                "accent = \"#a6e3a1\"\nbackground = \"#1e1e2e\"\nforeground = \"#cdd6f4\"\n",
+            )
+            .unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for ThemeDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A theme's skald.css only has to name what it changes: the palette
+    /// stays underneath, and the file's own declarations come last so they
+    /// win the cascade.
+    #[test]
+    fn a_themes_own_css_is_layered_over_the_palette() {
+        let dir = ThemeDir::new("layered");
+        fs::write(
+            dir.0.join("skald.css"),
+            ":root { --skald-sidebar-opacity: 0.8; }\n",
+        )
+        .unwrap();
+        let theme = load_in(&dir.0).unwrap();
+        let palette = theme.css.find("--accent-bg-color: #a6e3a1;").unwrap();
+        let own = theme.css.find("--skald-sidebar-opacity: 0.8;").unwrap();
+        assert!(palette < own);
+        assert!(!theme.light);
+        assert_eq!(opacity_in(&theme.css, SIDEBAR_OPACITY), Some(0.8));
+    }
+
+    /// Without a skald.css the derived palette is all there is, and the
+    /// sidebar keeps the built-in default.
+    #[test]
+    fn a_theme_without_its_own_css_leaves_the_sidebar_opaque() {
+        let dir = ThemeDir::new("derived");
+        let theme = load_in(&dir.0).unwrap();
+        assert!(theme.css.contains("--window-bg-color: #1e1e2e;"));
+        assert_eq!(opacity_in(&theme.css, SIDEBAR_OPACITY), None);
+    }
+
+    #[test]
+    fn sidebar_opacity_is_read_from_any_rule_and_the_last_one_wins() {
+        let css = "/* --skald-sidebar-opacity: 0.1; */\n\
+                   :root {\n  --skald-sidebar-opacity: 0.8;\n}\n\
+                   :root { --skald-sidebar-opacity:0.6 }\n";
+        assert_eq!(opacity_in(css, SIDEBAR_OPACITY), Some(0.6));
+        // Out of range clamps and look-alike names are ignored. A last value
+        // GTK's alpha() rejects (a percentage, garbage) still wins the
+        // cascade, so it reads as opaque rather than an earlier value.
+        assert_eq!(
+            opacity_in(":root { --skald-sidebar-opacity: 2; }", SIDEBAR_OPACITY),
+            Some(1.0)
+        );
+        assert_eq!(
+            opacity_in(":root { --skald-sidebar-opacity: 75%; }", SIDEBAR_OPACITY),
+            Some(1.0)
+        );
+        assert_eq!(
+            opacity_in(":root { --skald-sidebar-opacity: lots; }", SIDEBAR_OPACITY),
+            Some(1.0)
+        );
+        assert_eq!(
+            opacity_in(":root { --skald-sidebar-opacity-x: 0.5; }", SIDEBAR_OPACITY),
+            None
+        );
+        assert_eq!(
+            opacity_in("/* --skald-sidebar-opacity: 0.5", SIDEBAR_OPACITY),
+            None
+        );
     }
 }

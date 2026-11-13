@@ -11,8 +11,20 @@ laptop and resuming on the phone lands at the same spot.
 
 When an Omarchy theme is present, Skald takes its window colors, accent, and
 light/dark mode from the active palette and follows `omarchy theme set` live.
-It derives libadwaita colors from `colors.toml` by default; a theme can take
-full control by including a `skald.css` file.
+It derives libadwaita colors from `colors.toml` by default. A theme can add
+its own `skald.css`, or have one generated from
+`~/.config/omarchy/themed/skald.css.tpl`. It is layered over the derived
+palette, so it only needs the colors it changes.
+
+`--skald-sidebar-opacity` (a number from 0 to 1, default 1; not a
+percentage) fades the background of the
+player's chapter sidebar, but not its text, so the desktop shows through.
+For example, a translucent sidebar for every theme:
+
+```css
+/* ~/.config/omarchy/themed/skald.css.tpl */
+:root { --skald-sidebar-opacity: 0.8; }
+```
 
 ## Layout
 

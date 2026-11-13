@@ -82,7 +82,8 @@ impl PlayerPage {
         header.pack_end(&toggle);
         let tv = adw::ToolbarView::builder().content(&split).build();
         tv.add_top_bar(&header);
-        let page = adw::NavigationPage::builder().title("Now playing").tag("player").child(&tv).build();
+        // .skald-player keeps the page clear behind a translucent sidebar (ui::CSS).
+        let page = adw::NavigationPage::builder().title("Now playing").tag("player").css_classes(["skald-player"]).child(&tv).build();
 
         Self { page, cover, title, author, chapter, scale, elapsed, remaining, play_btn, speed, chapter_list, status, seeking: Cell::new(false), speeds }
     }
