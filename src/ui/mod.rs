@@ -54,8 +54,48 @@ pub struct App {
 
 pub type AppRef = Rc<App>;
 
+/// Skald's own stylesheet. It sits below the accent fallback and the Omarchy
+/// theme, so both can override what it sets.
+const CSS: &str = "
+/* Sidebar opacity: --skald-sidebar-opacity (a number, 0 to 1) fades the chapter
+   sidebar's background but never its text. An Omarchy theme's skald.css sets
+   it. Below 1, the window also gets .skald-transparent (see build) so the
+   desktop shows through instead of the window background. Scoped to the
+   split view's own pane so nested panes, which Adwaita keeps transparent,
+   are left alone. */
+:root { --skald-sidebar-opacity: 1; }
+overlay-split-view > .sidebar-pane {
+    background-color: alpha(var(--sidebar-bg-color), var(--skald-sidebar-opacity));
+}
+overlay-split-view > .sidebar-pane:backdrop {
+    background-color: alpha(var(--sidebar-backdrop-color), var(--skald-sidebar-opacity));
+}
+window.skald-transparent { background-color: transparent; }
+/* Everything else drew on the window background removed above, so paint it
+   back. Library and sign-in pages (grid, status pages, web view) are opaque
+   whole. On the player page, only the header and the split view's content
+   side are: the page itself stays clear behind the sidebar. Paint the header
+   on the .top-bar, NOT on the headerbar: GTK dims the windowhandle subtree to
+   50% on backdrop, which would fade the headerbar into the wallpaper. The
+   split view never collapses (it has no breakpoint), so its content always
+   carries .content-pane. Popovers, dialogs and toasts paint their own
+   backgrounds. */
+window.skald-transparent navigation-view-page:not(.skald-player),
+window.skald-transparent navigation-view-page.skald-player toolbarview > .top-bar,
+window.skald-transparent overlay-split-view > .content-pane {
+    background-color: var(--window-bg-color);
+}
+";
+
 pub fn build(gtk_app: &adw::Application) {
     let omarchy_theme = gtk::gdk::Display::default().map(|display| {
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(CSS);
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
         crate::accent::install_fallback(&display);
         crate::omarchy::OmarchyTheme::install(&display)
     });
@@ -67,6 +107,21 @@ pub fn build(gtk_app: &adw::Application) {
         .application(gtk_app).title("Skald")
         .default_width(1000).default_height(700)
         .content(&toasts).build();
+    // A translucent sidebar only reaches the desktop once the window stops
+    // painting its own background underneath.
+    if let Some(theme) = &omarchy_theme {
+        theme.connect_sidebar_opacity(glib::clone!(
+            #[weak]
+            window,
+            move |opacity| {
+                if opacity < 1.0 {
+                    window.add_css_class("skald-transparent")
+                } else {
+                    window.remove_css_class("skald-transparent")
+                }
+            }
+        ));
+    }
 
     let app: AppRef = Rc::new(App {
         window: window.clone(), nav: nav.clone(), toasts,
