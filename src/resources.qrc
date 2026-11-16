@@ -5,6 +5,13 @@
         <file alias="PlayerPage.qml">PlayerPage.qml</file>
         <file alias="NowPlayingBar.qml">NowPlayingBar.qml</file>
         <file alias="HelpOverlay.qml">HelpOverlay.qml</file>
+        <file alias="AdwButton.qml">AdwButton.qml</file>
+        <file alias="AdwSlider.qml">AdwSlider.qml</file>
+        <file alias="CloseButton.qml">CloseButton.qml</file>
+        <file alias="Cover.qml">Cover.qml</file>
+        <file alias="HeaderBar.qml">HeaderBar.qml</file>
+        <file alias="SearchEntry.qml">SearchEntry.qml</file>
+        <file alias="Spinner.qml">Spinner.qml</file>
         <file alias="web/player.js">web/player.js</file>
         <file alias="web/library.js">web/library.js</file>
         <file alias="icons/play.svg">icons/play.svg</file>

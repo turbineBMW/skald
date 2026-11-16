@@ -31,6 +31,27 @@ the module from a Chromium or Chrome profile, so one of those must be installed 
 have played something protected once (which is when it downloads the module). Skald
 tells you at startup if it cannot find it.
 
+## Appearance
+
+Skald is drawn to look like the libadwaita apps beside it (Bubo, Rustle):
+header bars, GTK-style buttons, symbolic icons from your icon theme, and the
+chapters in a sidebar on the left. It follows the active Omarchy theme,
+including its palette and light or dark mode, and changes live with it.
+Outside Omarchy it follows the system's light or dark preference.
+
+Like Bubo, Skald reads `~/.local/state/omarchy/current/theme/colors.toml`, and a
+theme can provide `skald.css`, including through an Omarchy template at
+`~/.config/omarchy/themed/skald.css.tpl`. It is layered over the palette, so it
+only needs what it changes: libadwaita's color variables such as
+`--accent-bg-color` or `--window-bg-color` (as plain colors), and
+`--skald-sidebar-opacity`, a number from 0 to 1 that fades the chapter
+sidebar's background but not its text:
+
+```css
+/* ~/.config/omarchy/themed/skald.css.tpl */
+:root { --skald-sidebar-opacity: 0.8; }
+```
+
 ## Shortcuts
 
 | Key | Action |
@@ -75,7 +96,9 @@ bin/install    # builds the package and installs it, so Skald is in the launcher
 - `src/library.*`: the list of titles and its search
 - `src/mpris.*`: media keys over D-Bus
 - `src/web/*.js`: the two small scripts that run inside Audible's pages
-- `src/*.qml`: the window
+- `src/theme.*`: the Omarchy palette, resolved as the GTK apps resolve it
+- `src/*.qml`: the window, with small libadwaita look-alike controls
+  (`AdwButton`, `HeaderBar`, `SearchEntry`, …)
 
 ## Licence
 

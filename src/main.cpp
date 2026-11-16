@@ -8,6 +8,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlNetworkAccessManagerFactory>
+#include <QQuickWindow>
 #include <QQuickStyle>
 #include <QQuickWebEngineProfile>
 #include <QRegularExpression>
@@ -49,7 +50,16 @@ int main(int argc, char *argv[]) {
     app.setDesktopFileName("skald");
     app.setWindowIcon(QIcon::fromTheme("skald"));
 
-    QQuickStyle::setStyle("Material");
+    // The controls are drawn to libadwaita's measures in Skald's own QML;
+    // Basic is only the plain base they are built on.
+    QQuickStyle::setStyle("Basic");
+
+    // A translucent chapter sidebar shows the desktop through the window.
+    QQuickWindow::setDefaultAlphaBuffer(true);
+
+    // Symbolic icons come from the desktop's icon theme, as in a GTK app, and
+    // from Adwaita's (which GTK always falls back to) where it has none.
+    QIcon::setFallbackThemeName("Adwaita");
 
     // Installed before anything is translated, and every qsTr() binding is
     // re-evaluated when the Omarchy language changes.

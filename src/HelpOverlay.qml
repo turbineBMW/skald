@@ -1,35 +1,43 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Every shortcut, on "?".
+// Every shortcut, on "?" or the main menu, as a libadwaita dialog.
 Rectangle {
     id: root
 
     signal closed()
     signal signOut()
 
-    color: "#cc000000"
+    color: Qt.rgba(0, 0, 0.02, theme.dark ? 0.5 : 0.25)
 
-    MouseArea { anchors.fill: parent; onClicked: root.closed() }
+    TapHandler { onTapped: root.closed() }
 
     Rectangle {
         anchors.centerIn: parent
-        width: Math.min(parent.width - 40, 520)
-        height: Math.min(parent.height - 40, content.implicitHeight + 48)
-        radius: theme.radius
-        color: "#1a1a1e"
+        width: Math.min(parent.width - 40, 480)
+        height: Math.min(parent.height - 40, content.implicitHeight + 47 + 24)
+        radius: 15
+        color: theme.popover
+        border.width: 1
+        border.color: Qt.rgba(0, 0, 0.02, 0.05)
 
-        MouseArea { anchors.fill: parent }
+        // Clicks inside the dialog don't close it.
+        TapHandler {}
+
+        HeaderBar {
+            id: header
+            anchors { top: parent.top; left: parent.left; right: parent.right; margins: 1 }
+            color: "transparent"
+            shade: false
+            title: qsTr("Keyboard Shortcuts")
+            end: [AdwButton { flat: true; circular: true; iconName: "window-close-symbolic"; tip: qsTr("Close"); onClicked: root.closed() }]
+        }
 
         ColumnLayout {
             id: content
-            anchors.fill: parent
-            anchors.margins: 24
-            spacing: 14
-
-            Label { text: qsTr("Keyboard shortcuts"); font.pixelSize: 18; font.bold: true }
+            anchors { top: header.bottom; left: parent.left; right: parent.right; margins: 24; topMargin: 6 }
+            spacing: 10
 
             Repeater {
                 model: [
@@ -51,16 +59,27 @@ Rectangle {
                     id: line
                     required property var modelData
                     Layout.fillWidth: true
-                    spacing: 20
-                    Label { Layout.preferredWidth: 110; text: line.modelData[0]; color: theme.accent; font.bold: true }
+                    spacing: 16
                     Label { Layout.fillWidth: true; text: line.modelData[1]; wrapMode: Text.Wrap }
+                    // A GTK shortcut label: the keys as a keycap.
+                    Rectangle {
+                        implicitWidth: key.implicitWidth + 16
+                        implicitHeight: key.implicitHeight + 8
+                        radius: 6
+                        color: Qt.alpha(theme.foreground, 0.08)
+                        border.width: 1
+                        border.color: theme.border
+                        Label { id: key; anchors.centerIn: parent; text: line.modelData[0]; font.pixelSize: 12; font.weight: Font.Bold }
+                    }
                 }
             }
 
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                Button { text: qsTr("Sign out"); flat: true; Material.roundedScale: theme.radius; onClicked: root.signOut() }
+            AdwButton {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: 10
+                pill: true
+                text: qsTr("Sign Out")
+                onClicked: root.signOut()
             }
         }
     }
