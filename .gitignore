@@ -1,5 +1,7 @@
-target/
-probe/.venv/
-probe/auth.json
-packaging/skald-src.tar.gz
-packaging/version
+/build/
+/pkgbuild/pkg/
+/pkgbuild/src/
+*.pkg.tar.*
+# Left over from the Rust/GTK version of Skald.
+/target/
+/packaging/

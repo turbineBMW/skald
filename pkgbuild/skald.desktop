@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Skald
+Comment=Listen to your Audible library
+Exec=skald
+Icon=skald
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=audible;audiobook;
+StartupWMClass=skald

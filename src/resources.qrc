@@ -1,0 +1,19 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="Main.qml">Main.qml</file>
+        <file alias="BookGrid.qml">BookGrid.qml</file>
+        <file alias="PlayerPage.qml">PlayerPage.qml</file>
+        <file alias="NowPlayingBar.qml">NowPlayingBar.qml</file>
+        <file alias="HelpOverlay.qml">HelpOverlay.qml</file>
+        <file alias="web/player.js">web/player.js</file>
+        <file alias="web/library.js">web/library.js</file>
+        <file alias="icons/play.svg">icons/play.svg</file>
+        <file alias="icons/pause.svg">icons/pause.svg</file>
+        <file alias="icons/previous.svg">icons/previous.svg</file>
+        <file alias="icons/next.svg">icons/next.svg</file>
+        <file alias="icons/rewind.svg">icons/rewind.svg</file>
+        <file alias="icons/forward.svg">icons/forward.svg</file>
+        <file alias="icons/back.svg">icons/back.svg</file>
+        <file alias="i18n/en.json">i18n/en.json</file>
+    </qresource>
+</RCC>
