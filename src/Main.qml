@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtWebEngine
 
@@ -12,11 +11,26 @@ ApplicationWindow {
     minimumHeight: 520
     visible: true
     title: backend.title ? qsTr("%1 — Skald").arg(backend.title) : "Skald"
-    color: "#0e0e10"
+    // A translucent chapter sidebar needs the desktop behind it, so the
+    // window stops painting and every page paints its own background.
+    color: theme.sidebarOpacity < 1 ? "transparent" : theme.window
 
-    Material.theme: Material.Dark
-    Material.accent: theme.accent
-    Material.roundedScale: theme.radius
+    // Basic controls (labels, text fields, scroll bars) read these.
+    palette {
+        window: theme.window
+        windowText: theme.foreground
+        base: theme.window
+        text: theme.foreground
+        button: Qt.alpha(theme.foreground, 0.1)
+        buttonText: theme.foreground
+        highlight: theme.accent
+        highlightedText: theme.accentForeground
+        placeholderText: Qt.alpha(theme.foreground, 0.55)
+        mid: Qt.alpha(theme.foreground, 0.35)
+        dark: Qt.alpha(theme.foreground, 0.55)
+        toolTipBase: Qt.rgba(0, 0, 0, 0.8)
+        toolTipText: "white"
+    }
 
     property bool helpVisible: false
     // Shows Audible's own player page, for when something there needs a click.
@@ -139,15 +153,22 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 0
 
+            // A libadwaita banner.
             Rectangle {
                 Layout.fillWidth: true
                 visible: notice.text !== ""
-                implicitHeight: notice.implicitHeight + 20
-                color: "#3a1d1d"
+                implicitHeight: notice.implicitHeight + 24
+                color: theme.window
+                Rectangle {
+                    anchors.fill: parent
+                    color: Qt.alpha(theme.accent, 0.3)
+                }
                 Label {
                     id: notice
                     anchors.fill: parent
-                    anchors.margins: 10
+                    anchors.margins: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                     wrapMode: Text.Wrap
                     text: backend.widevineProblem !== "" ? backend.widevineProblem : backend.libraryError
                 }
@@ -161,11 +182,13 @@ ApplicationWindow {
                 BookGrid {
                     id: library
                     onOpened: function(asin) { win.openBook(asin) }
+                    onMenu: win.helpVisible = true
                 }
                 PlayerPage {
                     chaptersVisible: win.chaptersVisible
                     onShowWeb: win.webVisible = true
                     onBack: win.page = "library"
+                    onToggleChapters: win.chaptersVisible = !win.chaptersVisible
                 }
             }
 
@@ -194,18 +217,17 @@ ApplicationWindow {
             anchors.fill: parent
             z: 20
             visible: win.signingIn
-            color: win.color
+            color: theme.window
 
-            Label {
+            HeaderBar {
                 id: signInTitle
-                anchors { top: parent.top; left: parent.left; right: parent.right; margins: 12 }
-                horizontalAlignment: Text.AlignHCenter
-                text: qsTr("Sign in to Audible to open your library")
-                opacity: 0.8
+                anchors { top: parent.top; left: parent.left; right: parent.right }
+                title: qsTr("Sign in to Audible to open your library")
+                end: [CloseButton {}]
             }
             WebEngineView {
                 id: session
-                anchors { top: signInTitle.bottom; left: parent.left; right: parent.right; bottom: parent.bottom; topMargin: 12 }
+                anchors { top: signInTitle.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
                 profile: webProfile
                 onUrlChanged: backend.sessionNavigated(url, false)
                 onLoadingChanged: function(info) {
@@ -216,9 +238,10 @@ ApplicationWindow {
             }
         }
 
-        BusyIndicator {
+        Spinner {
             anchors.centerIn: parent
-            running: visible
+            width: 32
+            height: 32
             visible: backend.state === "starting" && backend.library.total === 0
         }
 

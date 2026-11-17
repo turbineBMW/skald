@@ -4,7 +4,7 @@ pkgrel=1
 pkgdesc='A desktop player for your Audible library, built on the Audible web player'
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-wayland' 'qt6-webengine')
+depends=('adwaita-icon-theme' 'qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-wayland' 'qt6-webengine')
 # Audible streams with Widevine, which Qt WebEngine borrows from a Chromium profile.
 optdepends=('chromium: provides the Widevine module Audible playback needs')
 makedepends=('gcc' 'make')

@@ -1,17 +1,247 @@
-// Theme watching follows Omacut (MIT, David Heinemeier Hansson).
+// Theme watching follows Omacut (MIT, David Heinemeier Hansson); the palette
+// is the one Skald's GTK version and Bubo derive for libadwaita.
 #include "theme.h"
 
-#include <QColor>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonDocument>
-#include <QJsonObject>
+#include <QGuiApplication>
 #include <QRegularExpression>
-#include <QStandardPaths>
+#include <QStyleHints>
 #include <cmath>
 
-Theme::Theme(const QString &directory, QObject *parent, const QString &hyprctl)
+namespace {
+
+using Colors = QHash<QString, QString>;
+
+QString readFile(const QString &path) {
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+}
+
+Colors parseToml(const QString &source) {
+    static const QRegularExpression keyCharacters("^[A-Za-z0-9_-]+$");
+    static const QRegularExpression valueCharacters("^[A-Za-z0-9#(),._+/% -]*$");
+    Colors colors;
+    for (const auto &line : source.split('\n')) {
+        const int equals = line.indexOf('=');
+        if (equals < 0)
+            continue;
+        QString key = line.left(equals);
+        key.remove(QRegularExpression("[\"'\\s]"));
+        if (key.isEmpty() || key.startsWith('#') || !keyCharacters.match(key).hasMatch())
+            continue;
+        QString value = line.mid(equals + 1);
+        const int quote = value.indexOf(QRegularExpression("[\"']"));
+        if (quote >= 0) {
+            value = value.mid(quote + 1);
+            value = value.left(value.indexOf(QRegularExpression("[\"']")));
+        } else {
+            value = value.trimmed();
+        }
+        if (valueCharacters.match(value).hasMatch())
+            colors.insert(key, value);
+    }
+    return colors;
+}
+
+bool has(const Colors &colors, const QString &key) { return !colors.value(key).isEmpty(); }
+
+void aliasAny(Colors &colors, const QString &key, const QStringList &from) {
+    if (has(colors, key))
+        return;
+    for (const auto &candidate : from)
+        if (has(colors, candidate)) {
+            colors.insert(key, colors.value(candidate));
+            return;
+        }
+}
+void alias(Colors &colors, const QString &key, const QString &from) { aliasAny(colors, key, {from}); }
+void mirror(Colors &colors, const QString &key, const QString &from) {
+    if (has(colors, from))
+        colors.insert(key, colors.value(from));
+}
+
+QColor hex(const QString &value) {
+    static const QRegularExpression sixDigits("^#[0-9a-fA-F]{6}$");
+    return sixDigits.match(value).hasMatch() ? QColor(value) : QColor();
+}
+
+QColor mix(const QColor &start, const QColor &end, double amount) {
+    amount = std::clamp(amount, 0.0, 1.0);
+    auto blend = [amount](int s, int e) { return int(s * (1 - amount) + e * amount + 0.5); };
+    return QColor(blend(start.red(), end.red()), blend(start.green(), end.green()), blend(start.blue(), end.blue()));
+}
+
+void derive(Colors &colors, const QString &key, const QString &base, const QString &toward, double amount) {
+    if (has(colors, key))
+        return;
+    const QColor from = hex(colors.value(base));
+    if (from.isValid())
+        colors.insert(key, mix(from, QColor(toward), amount).name());
+}
+
+double luminance(const QColor &c) {
+    auto linear = [](double v) { return v <= .04045 ? v / 12.92 : std::pow((v + .055) / 1.055, 2.4); };
+    return .2126 * linear(c.redF()) + .7152 * linear(c.greenF()) + .0722 * linear(c.blueF());
+}
+
+double contrast(const QColor &a, const QColor &b) {
+    const double la = luminance(a), lb = luminance(b);
+    return (std::max(la, lb) + .05) / (std::min(la, lb) + .05);
+}
+
+// A light theme's foreground made into ink: desaturated and dark enough to
+// read on the background, as the GTK palette does.
+QColor ink(const QColor &fg, const QColor &bg) {
+    constexpr double maxSaturation = .30, minContrast = 7.0;
+    if (!fg.isValid() || !bg.isValid())
+        return fg;
+    if (fg.hslSaturationF() <= maxSaturation && contrast(fg, bg) >= minContrast)
+        return fg;
+    const double hue = std::max<float>(0, fg.hslHueF()), saturation = std::min<float>(fg.hslSaturationF(), maxSaturation);
+    double lightness = fg.lightnessF();
+    for (;;) {
+        const QColor candidate = QColor::fromHslF(hue, saturation, lightness);
+        if (lightness <= 0 || contrast(candidate, bg) >= minContrast)
+            return candidate;
+        lightness = std::max(0.0, lightness - .005);
+    }
+}
+
+// The faintest line, in percent of the foreground, that still shows on every surface.
+int borderOpacity(const QColor &fg, const QList<QColor> &surfaces) {
+    for (int opacity = 15; opacity <= 40; ++opacity) {
+        bool visible = true;
+        for (const auto &surface : surfaces)
+            if (surface.isValid() && fg.isValid() && contrast(mix(surface, fg, opacity / 100.0), surface) < 1.4)
+                visible = false;
+        if (visible)
+            return opacity;
+    }
+    return 40;
+}
+
+QString readableOn(const QString &color) {
+    const QColor c(color);
+    return c.isValid() && .299 * c.red() + .587 * c.green() + .114 * c.blue() > 140 ? "#000000" : "#ffffff";
+}
+
+QString withAlpha(const QString &color, int percent) {
+    QColor c(color);
+    c.setAlphaF(percent / 100.0);
+    return c.name(QColor::HexArgb);
+}
+
+// libadwaita's own colors, for a desktop without Omarchy.
+Colors adwaita(bool dark) {
+    if (dark)
+        return {{"--window-bg-color", "#222226"}, {"--window-fg-color", "#ffffff"},
+                {"--headerbar-bg-color", "#2e2e32"}, {"--headerbar-shade-color", "#5c000006"},
+                {"--sidebar-bg-color", "#2e2e32"}, {"--sidebar-backdrop-color", "#28282c"},
+                {"--card-bg-color", "#14ffffff"}, {"--popover-bg-color", "#36363a"},
+                {"--border-color", "#26ffffff"}, {"--accent-bg-color", "#3584e4"},
+                {"--accent-fg-color", "#ffffff"}, {"--error-color", "#ff938c"}};
+    return {{"--window-bg-color", "#fafafb"}, {"--window-fg-color", "#cc000006"},
+            {"--headerbar-bg-color", "#ffffff"}, {"--headerbar-shade-color", "#1f000006"},
+            {"--sidebar-bg-color", "#ebebed"}, {"--sidebar-backdrop-color", "#f2f2f4"},
+            {"--card-bg-color", "#ffffff"}, {"--popover-bg-color", "#ffffff"},
+            {"--border-color", "#26000006"}, {"--accent-bg-color", "#3584e4"},
+            {"--accent-fg-color", "#ffffff"}, {"--error-color", "#c30000"}};
+}
+
+bool systemIsDark() {
+    return qGuiApp && qGuiApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+}
+
+} // namespace
+
+// Mirrors the fallback cascade used by omarchy-theme-color.
+QHash<QString, QString> Theme::palette(const QString &colorsToml, bool lightModeFile, bool *lightOut) {
+    Colors colors = parseToml(colorsToml);
+
+    const QList<QPair<QString, QString>> legacy{
+        {"background", "bg"}, {"dark_background", "dark_bg"}, {"darker_background", "darker_bg"},
+        {"lighter_background", "lighter_bg"}, {"foreground", "fg"}, {"dark_foreground", "dark_fg"},
+        {"light_foreground", "light_fg"}, {"bright_foreground", "bright_fg"}};
+    for (const auto &[canonical, old] : legacy)
+        alias(colors, canonical, old);
+    alias(colors, "background", "color0");
+    alias(colors, "foreground", "color7");
+    mirror(colors, "color0", "background");
+    mirror(colors, "color7", "foreground");
+    const QList<QPair<QString, QString>> ansi{
+        {"red", "color1"}, {"green", "color2"}, {"yellow", "color3"}, {"blue", "color4"},
+        {"magenta", "color5"}, {"cyan", "color6"}, {"bright_red", "color9"}, {"bright_green", "color10"},
+        {"bright_yellow", "color11"}, {"bright_blue", "color12"}, {"bright_magenta", "color13"},
+        {"bright_cyan", "color14"}};
+    for (const auto &[name, number] : ansi)
+        alias(colors, name, number);
+    alias(colors, "magenta", "purple");
+    aliasAny(colors, "light_foreground", {"color7", "foreground"});
+    aliasAny(colors, "bright_foreground", {"color15", "foreground"});
+    aliasAny(colors, "lighter_background", {"color0", "background"});
+    aliasAny(colors, "dark_foreground", {"color8", "foreground"});
+    derive(colors, "dark_background", "background", "#000000", .25);
+    derive(colors, "darker_background", "background", "#000000", .5);
+    derive(colors, "bright_red", "red", "#ffffff", .2);
+
+    bool light = false;
+    if (has(colors, "mode") || has(colors, "theme_type")) {
+        light = (has(colors, "mode") ? colors.value("mode") : colors.value("theme_type")).compare("light", Qt::CaseInsensitive) == 0;
+    } else if (lightModeFile) {
+        light = true;
+    } else {
+        const QColor bg = hex(colors.value("background"));
+        light = bg.isValid() && bg.red() + bg.green() + bg.blue() > 382;
+    }
+    if (lightOut)
+        *lightOut = light;
+
+    auto get = [&colors](const QString &key, const QString &fallback) {
+        return has(colors, key) ? colors.value(key) : colors.value(fallback, fallback);
+    };
+    const QString bg = get("background", "#1d1d20");
+    QString fg = get("foreground", "#d0cfcc");
+    if (light && hex(fg).isValid() && hex(bg).isValid())
+        fg = ink(hex(fg), hex(bg)).name();
+    const QString accent = get("accent", "#3584e4");
+    const QString chrome = get("dark_background", bg);
+    const QString backdrop = get("darker_background", bg);
+    const QString raised = get("lighter_background", bg);
+    const QString red = get("bright_red", get("red", light ? "#c30000" : "#ff938c"));
+    const int opacity = borderOpacity(QColor(fg), {QColor(bg), QColor(chrome)});
+
+    return {{"--window-bg-color", bg}, {"--window-fg-color", fg},
+            {"--headerbar-bg-color", chrome}, {"--headerbar-shade-color", light ? "#1f000006" : "#5c000006"},
+            {"--sidebar-bg-color", chrome}, {"--sidebar-backdrop-color", backdrop},
+            {"--card-bg-color", raised}, {"--popover-bg-color", chrome},
+            {"--border-color", withAlpha(fg, opacity)}, {"--accent-bg-color", accent},
+            {"--accent-fg-color", readableOn(accent)}, {"--error-color", red}};
+}
+
+QHash<QString, QString> Theme::customProperties(const QString &css) {
+    QString text = css;
+    text.remove(QRegularExpression(R"(/\*.*?(\*/|$))", QRegularExpression::DotMatchesEverythingOption));
+    static const QRegularExpression declaration(R"((?<![\w-])(--[\w-]+)\s*:\s*([^;}\n]*))");
+    QHash<QString, QString> found;
+    for (auto it = declaration.globalMatch(text); it.hasNext();) {
+        const auto match = it.next();
+        found.insert(match.captured(1), match.captured(2).trimmed());
+    }
+    return found;
+}
+
+double Theme::sidebarOpacityIn(const QString &css) {
+    const auto properties = customProperties(css);
+    if (!properties.contains("--skald-sidebar-opacity"))
+        return 1;
+    bool ok = false;
+    const double value = properties.value("--skald-sidebar-opacity").toDouble(&ok);
+    return ok && std::isfinite(value) ? std::clamp(value, 0.0, 1.0) : 1;
+}
+
+Theme::Theme(const QString &directory, QObject *parent)
     : QObject(parent),
       m_directory(directory.isEmpty() ? QDir::homePath() + "/.local/state/omarchy/current" : directory) {
     m_debounce.setSingleShot(true);
@@ -19,70 +249,45 @@ Theme::Theme(const QString &directory, QObject *parent, const QString &hyprctl)
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] { m_debounce.start(); });
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this] { m_debounce.start(); });
     connect(&m_debounce, &QTimer::timeout, this, &Theme::reload);
-
-    // Corners follow Hyprland's effective rounding, which themes and personal
-    // overrides can both set, so ask hyprctl rather than reading its config.
-    // Without Hyprland the corners stay sharp, like Omarchy's default.
-    m_hyprctl = !hyprctl.isEmpty() ? hyprctl
-              : directory.isEmpty() && !qEnvironmentVariableIsEmpty("HYPRLAND_INSTANCE_SIGNATURE")
-                  ? QStandardPaths::findExecutable("hyprctl") : QString();
-    m_roundingTimeout.setSingleShot(true);
-    m_roundingTimeout.setInterval(500);
-    connect(&m_roundingTimeout, &QTimer::timeout, &m_roundingProcess, &QProcess::kill);
-    connect(&m_roundingProcess, &QProcess::errorOccurred, this, [this] { m_roundingTimeout.stop(); });
-    connect(&m_roundingProcess, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
-        m_roundingTimeout.stop();
-        const auto value = QJsonDocument::fromJson(m_roundingProcess.readAllStandardOutput()).object().value("int");
-        if (code != 0 || status != QProcess::NormalExit || !value.isDouble() || value.toInt(-1) < 0)
-            return;
-        if (value.toInt() != m_radius) {
-            m_radius = value.toInt();
-            emit changed();
-        }
-    });
-    m_roundingPoll.setInterval(1000);
-    connect(&m_roundingPoll, &QTimer::timeout, this, &Theme::refreshRounding);
-    if (!m_hyprctl.isEmpty())
-        m_roundingPoll.start();
+    if (qGuiApp)
+        connect(qGuiApp->styleHints(), &QStyleHints::colorSchemeChanged, this, &Theme::reload);
     reload();
 }
 
-Theme::~Theme() {
-    if (m_roundingProcess.state() != QProcess::NotRunning) {
-        m_roundingProcess.kill();
-        m_roundingProcess.waitForFinished(1000);
-    }
-}
-
-void Theme::refreshRounding() {
-    if (m_hyprctl.isEmpty() || m_roundingProcess.state() != QProcess::NotRunning)
-        return;
-    m_roundingProcess.start(m_hyprctl, {"-j", "getoption", "decoration:rounding"});
-    m_roundingTimeout.start();
-}
-
-QString Theme::readAccent(const QString &path) {
-    QFile file(path);
-    if (file.open(QIODevice::ReadOnly)) {
-        const QRegularExpression expression(R"re(^\s*accent\s*=\s*["'](#[0-9a-fA-F]{6})["'])re",
-                                            QRegularExpression::MultilineOption);
-        const auto match = expression.match(QString::fromUtf8(file.readAll()));
-        if (match.hasMatch())
-            return match.captured(1);
-    }
-    return "#FFD60A";
-}
-
-// Black or white, whichever reads on the accent (WCAG relative luminance).
-QString Theme::accentForeground() const {
-    const QColor c(m_accent);
-    auto linear = [](double v) { return v <= .04045 ? v / 12.92 : std::pow((v + .055) / 1.055, 2.4); };
-    const double luminance = .2126 * linear(c.redF()) + .7152 * linear(c.greenF()) + .0722 * linear(c.blueF());
-    return luminance > .179 ? "black" : "white";
+QColor Theme::color(const QString &name) const {
+    const QColor value = QColor::fromString(m_variables.value(name));
+    return value.isValid() ? value : QColor::fromString(adwaita(m_dark).value(name));
 }
 
 void Theme::reload() {
-    refreshRounding();
+    watch();
+    const QString dir = m_directory + "/theme";
+    const QString toml = readFile(dir + "/colors.toml");
+    bool light = !systemIsDark();
+    QHash<QString, QString> variables = toml.isEmpty() ? adwaita(!light)
+                                                       : palette(toml, QFileInfo::exists(dir + "/light.mode"), &light);
+
+    // The theme's own skald.css is layered over the palette, so a partial
+    // file only changes what it names. Values Qt can't read as a color are
+    // left to the palette.
+    const QString css = toml.isEmpty() ? QString() : readFile(dir + "/skald.css");
+    const auto own = customProperties(css);
+    for (auto it = own.begin(); it != own.end(); ++it)
+        if (variables.contains(it.key()) && QColor::fromString(it.value()).isValid())
+            variables.insert(it.key(), it.value());
+    if (own.contains("--accent-bg-color") && !own.contains("--accent-fg-color"))
+        variables.insert("--accent-fg-color", readableOn(variables.value("--accent-bg-color")));
+
+    const double opacity = sidebarOpacityIn(css);
+    if (variables == m_variables && light == !m_dark && opacity == m_sidebarOpacity)
+        return;
+    m_variables = variables;
+    m_dark = !light;
+    m_sidebarOpacity = opacity;
+    emit changed();
+}
+
+void Theme::watch() {
     const auto paths = m_watcher.files() + m_watcher.directories();
     if (!paths.isEmpty())
         m_watcher.removePaths(paths);
@@ -94,15 +299,10 @@ void Theme::reload() {
     while (!QFileInfo::exists(ancestor) && ancestor != "/")
         ancestor = QFileInfo(ancestor).absolutePath();
     QStringList candidates{ancestor, QFileInfo(ancestor).absolutePath(), m_directory,
-                           m_directory + "/theme", m_directory + "/theme/colors.toml"};
+                           m_directory + "/theme", m_directory + "/theme/colors.toml",
+                           m_directory + "/theme/skald.css"};
     candidates.removeDuplicates();
     for (const auto &path : candidates)
         if (QFileInfo::exists(path))
             m_watcher.addPath(path);
-
-    const auto accent = readAccent(m_directory + "/theme/colors.toml");
-    if (accent != m_accent) {
-        m_accent = accent;
-        emit changed();
-    }
 }

@@ -254,37 +254,69 @@ private slots:
         QCOMPARE(backend.script("nope"), QString());
     }
 
-    void themeFallsBack()
+    void themeFallsBackToAdwaita()
     {
         QTemporaryDir dir;
         Theme theme(dir.path());
-        QCOMPARE(theme.accent(), QString("#FFD60A"));
-        QCOMPARE(theme.accentForeground(), QString("black"));
+        QCOMPARE(theme.accent(), QColor("#3584e4"));
+        QCOMPARE(theme.sidebarOpacity(), 1.0);
     }
 
-    void themeReadsAccent()
+    void themeResolvesTheOmarchyPalette()
     {
         QTemporaryDir dir;
         QDir(dir.path()).mkpath("theme");
-        write(dir.path() + "/theme/colors.toml", "accent = \"#112233\"\n");
+        write(dir.path() + "/theme/colors.toml",
+              "mode = \"dark\"\naccent = \"#112233\"\nbackground = \"#1e1e2e\"\nforeground = \"#cdd6f4\"\n");
 
         Theme theme(dir.path());
-        QCOMPARE(theme.accent(), QString("#112233"));
-        QCOMPARE(theme.accentForeground(), QString("white"));
+        QVERIFY(theme.dark());
+        QCOMPARE(theme.accent(), QColor("#112233"));
+        QCOMPARE(theme.accentForeground(), QColor("#ffffff"));
+        QCOMPARE(theme.window(), QColor("#1e1e2e"));
+        QCOMPARE(theme.foreground(), QColor("#cdd6f4"));
+        // No dark_background: a quarter of the way to black, like omarchy-theme-color.
+        QCOMPARE(theme.sidebar(), QColor("#171723"));
+        QCOMPARE(theme.headerbar(), theme.sidebar());
     }
 
-    void themeFollowsHyprlandRounding()
+    void themeFollowsLightMode()
     {
         QTemporaryDir dir;
-        const QString response = dir.filePath("response.json"), command = dir.filePath("hyprctl");
-        write(command, "#!/bin/sh\ncat '" + response.toUtf8() + "'\n");
-        QVERIFY(QFile::setPermissions(command, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
-        write(response, "{\"int\":0}");
+        QDir(dir.path()).mkpath("theme");
+        write(dir.path() + "/theme/colors.toml", "color0 = \"#f7efe6\"\ncolor7 = \"#2a2329\"\naccent = \"#e8894a\"\n");
+        write(dir.path() + "/theme/light.mode", "");
 
-        Theme theme(dir.path(), nullptr, command);
-        QCOMPARE(theme.radius(), 0);
-        write(response, "{\"int\":6}");
-        QTRY_COMPARE(theme.radius(), 6);
+        Theme theme(dir.path());
+        QVERIFY(!theme.dark());
+        QCOMPARE(theme.window(), QColor("#f7efe6"));
+        QCOMPARE(theme.accentForeground(), QColor("#000000"));
+    }
+
+    void themeCssIsLayeredOverThePalette()
+    {
+        QTemporaryDir dir;
+        QDir(dir.path()).mkpath("theme");
+        write(dir.path() + "/theme/colors.toml", "background = \"#1e1e2e\"\naccent = \"#112233\"\n");
+        write(dir.path() + "/theme/skald.css",
+              "/* --skald-sidebar-opacity: 0.1; */\n:root { --skald-sidebar-opacity: 0.8; --accent-bg-color: #ffd60a; }\n");
+
+        Theme theme(dir.path());
+        QCOMPARE(theme.sidebarOpacity(), 0.8);
+        QCOMPARE(theme.accent(), QColor("#ffd60a"));
+        QCOMPARE(theme.accentForeground(), QColor("#000000"));
+        QCOMPARE(theme.window(), QColor("#1e1e2e"));
+    }
+
+    void sidebarOpacityReadsLikeGtk()
+    {
+        QCOMPARE(Theme::sidebarOpacityIn(""), 1.0);
+        QCOMPARE(Theme::sidebarOpacityIn(":root { --skald-sidebar-opacity: 0.5 }"), 0.5);
+        QCOMPARE(Theme::sidebarOpacityIn(":root { --skald-sidebar-opacity: 3; }"), 1.0);
+        // The last declaration wins even when it isn't a number, which GTK reads as unset.
+        QCOMPARE(Theme::sidebarOpacityIn("a { --skald-sidebar-opacity: 0.5; } b { --skald-sidebar-opacity: 80%; }"), 1.0);
+        // Other properties that merely contain the name don't count.
+        QCOMPARE(Theme::sidebarOpacityIn(":root { --skald-sidebar-opacity-x: 0.2; --x--skald-sidebar-opacity: 0.3; }"), 1.0);
     }
 
     void translatorFallsBackToEnglish()
