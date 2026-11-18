@@ -33,6 +33,7 @@ ApplicationWindow {
     }
 
     property bool helpVisible: false
+    property bool preferencesVisible: false
     // Shows Audible's own player page, for when something there needs a click.
     property bool webVisible: false
     property bool chaptersVisible: true
@@ -107,6 +108,7 @@ ApplicationWindow {
         sequence: "Escape"; context: Qt.ApplicationShortcut; enabled: !win.signingIn && !library.searching
         onActivated: {
             if (win.helpVisible) win.helpVisible = false
+            else if (win.preferencesVisible) win.preferencesVisible = false
             else if (win.webVisible) win.webVisible = false
             else win.page = "library"
         }
@@ -182,7 +184,8 @@ ApplicationWindow {
                 BookGrid {
                     id: library
                     onOpened: function(asin) { win.openBook(asin) }
-                    onMenu: win.helpVisible = true
+                    onShortcuts: win.helpVisible = true
+                    onPreferences: win.preferencesVisible = true
                 }
                 PlayerPage {
                     chaptersVisible: win.chaptersVisible
@@ -251,6 +254,13 @@ ApplicationWindow {
             visible: win.helpVisible
             onClosed: win.helpVisible = false
             onSignOut: { win.helpVisible = false; win.page = "library"; backend.signOut() }
+        }
+
+        PreferencesDialog {
+            anchors.fill: parent
+            z: 30
+            visible: win.preferencesVisible
+            onClosed: win.preferencesVisible = false
         }
     }
 }

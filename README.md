@@ -43,14 +43,14 @@ Like Bubo, Skald reads `~/.local/state/omarchy/current/theme/colors.toml`, and a
 theme can provide `skald.css`, including through an Omarchy template at
 `~/.config/omarchy/themed/skald.css.tpl`. It is layered over the palette, so it
 only needs what it changes: libadwaita's color variables such as
-`--accent-bg-color` or `--window-bg-color` (as plain colors), and
-`--skald-sidebar-opacity`, a number from 0 to 1 that fades the chapter
-sidebar's background but not its text:
+`--accent-bg-color` or `--window-bg-color` (as plain colors).
 
-```css
-/* ~/.config/omarchy/themed/skald.css.tpl */
-:root { --skald-sidebar-opacity: 0.8; }
-```
+For a see-through chapter sidebar, open **Main menu → Preferences**, turn on
+**Transparent sidebar** and set **Sidebar opacity**. It fades the sidebar's
+background but not its text. The setting is Skald's own (kept in
+`~/.config/skald/skald.ini`), so it works without Omarchy and no theme changes
+it. (Themes used to set `--skald-sidebar-opacity`; the first launch with this
+setting carries that value over.)
 
 ## Shortcuts
 

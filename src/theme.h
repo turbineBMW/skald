@@ -4,6 +4,7 @@
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QObject>
+#include <QSettings>
 #include <QTimer>
 
 // The Omarchy palette, resolved the way Skald's GTK siblings (Bubo, Rustle)
@@ -11,9 +12,13 @@
 //
 // colors.toml gives the colors and light or dark mode. A theme's skald.css
 // (or ~/.config/omarchy/themed/skald.css.tpl) is layered over that: it can
-// restate any of the libadwaita color variables below, and set
-// --skald-sidebar-opacity, a number from 0 to 1 that fades the chapter
-// sidebar's background, never its text.
+// restate any of the libadwaita color variables below.
+//
+// The see-through chapter sidebar is Skald's own setting (Preferences →
+// Transparent sidebar, kept in skald.ini), not the theme's: sidebarOpacity
+// is the setting's opacity while it is on and 1 otherwise. Themes used to set
+// --skald-sidebar-opacity; the first launch with the setting carries a
+// theme's value over, once.
 //
 // Without Omarchy, the window follows the system's light or dark preference
 // in libadwaita's own default colors.
@@ -32,9 +37,14 @@ class Theme : public QObject {
     Q_PROPERTY(QColor accent READ accent NOTIFY changed)
     Q_PROPERTY(QColor accentForeground READ accentForeground NOTIFY changed)
     Q_PROPERTY(QColor error READ error NOTIFY changed)
+    // The chapter sidebar's background opacity now in force.
     Q_PROPERTY(double sidebarOpacity READ sidebarOpacity NOTIFY changed)
+    Q_PROPERTY(bool transparentSidebar READ transparentSidebar WRITE setTransparentSidebar NOTIFY changed)
+    // What the Sidebar opacity slider is set to, from 0 to 1.
+    Q_PROPERTY(double sidebarOpacitySetting READ sidebarOpacitySetting WRITE setSidebarOpacitySetting NOTIFY changed)
 
 public:
+    // Tests pass a directory, which then holds the Omarchy state and skald.ini.
     explicit Theme(const QString &currentDirectory = {}, QObject *parent = nullptr);
 
     bool dark() const { return m_dark; }
@@ -50,14 +60,19 @@ public:
     QColor accent() const { return color("--accent-bg-color"); }
     QColor accentForeground() const { return color("--accent-fg-color"); }
     QColor error() const { return color("--error-color"); }
-    double sidebarOpacity() const { return m_sidebarOpacity; }
+    double sidebarOpacity() const { return m_transparentSidebar ? m_sidebarOpacitySetting : 1; }
+    bool transparentSidebar() const { return m_transparentSidebar; }
+    void setTransparentSidebar(bool transparent);
+    double sidebarOpacitySetting() const { return m_sidebarOpacitySetting; }
+    void setSidebarOpacitySetting(double opacity);
 
     // The libadwaita variables a colors.toml resolves to, and whether it is light.
     static QHash<QString, QString> palette(const QString &colorsToml, bool lightModeFile, bool *light = nullptr);
     // Every custom property `css` sets, the last value winning. Comments are skipped.
     static QHash<QString, QString> customProperties(const QString &css);
     // --skald-sidebar-opacity as `css` sets it: 1 when unset, and also when
-    // the last value isn't a plain number, as GTK would read it.
+    // the last value isn't a plain number, as GTK would read it. Only read
+    // once now, to carry a theme's old value into the setting.
     static double sidebarOpacityIn(const QString &css);
 
 signals:
@@ -66,12 +81,17 @@ signals:
 private:
     void reload();
     void watch();
+    void loadSidebarSetting();
     QColor color(const QString &name) const;
 
     QString m_directory;
     QHash<QString, QString> m_variables;
     bool m_dark = true;
-    double m_sidebarOpacity = 1;
+    // What the active theme's skald.css says, for the one-time carry-over.
+    double m_themeSidebarOpacity = 1;
+    QSettings m_settings;
+    bool m_transparentSidebar = false;
+    double m_sidebarOpacitySetting = 0.8;
     QFileSystemWatcher m_watcher;
     QTimer m_debounce;
 };

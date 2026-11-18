@@ -6,7 +6,7 @@ import QtQuick.Layouts
 // in a sidebar on the start side, and the cover, where you are in the
 // chapter and the controls beside it.
 //
-// The sidebar's background fades with the theme's --skald-sidebar-opacity
+// The sidebar's background fades with the Transparent sidebar setting
 // (its text never does); the window paints nothing then, so the content side
 // paints its own background.
 Item {

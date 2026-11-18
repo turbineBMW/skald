@@ -302,10 +302,45 @@ private slots:
               "/* --skald-sidebar-opacity: 0.1; */\n:root { --skald-sidebar-opacity: 0.8; --accent-bg-color: #ffd60a; }\n");
 
         Theme theme(dir.path());
-        QCOMPARE(theme.sidebarOpacity(), 0.8);
         QCOMPARE(theme.accent(), QColor("#ffd60a"));
         QCOMPARE(theme.accentForeground(), QColor("#000000"));
         QCOMPARE(theme.window(), QColor("#1e1e2e"));
+    }
+
+    // The sidebar's opacity is Skald's setting. A theme's old value is carried
+    // over on the first launch only.
+    void sidebarOpacityIsASettingThatAdoptsTheThemeOnce()
+    {
+        QTemporaryDir dir;
+        QDir(dir.path()).mkpath("theme");
+        write(dir.path() + "/theme/colors.toml", "background = \"#1e1e2e\"\n");
+        write(dir.path() + "/theme/skald.css", ":root { --skald-sidebar-opacity: 0.7; }\n");
+        {
+            Theme theme(dir.path());
+            QVERIFY(theme.transparentSidebar());
+            QCOMPARE(theme.sidebarOpacitySetting(), 0.7);
+            QCOMPARE(theme.sidebarOpacity(), 0.7);
+            theme.setSidebarOpacitySetting(0.456);
+            QCOMPARE(theme.sidebarOpacity(), 0.46);
+        }
+        // The theme no longer matters, and the setting survives a restart.
+        write(dir.path() + "/theme/skald.css", ":root { --skald-sidebar-opacity: 0.2; }\n");
+        {
+            Theme theme(dir.path());
+            QCOMPARE(theme.sidebarOpacity(), 0.46);
+            theme.setTransparentSidebar(false);
+            QCOMPARE(theme.sidebarOpacity(), 1.0);
+            QCOMPARE(theme.sidebarOpacitySetting(), 0.46);
+        }
+        Theme theme(dir.path());
+        QVERIFY(!theme.transparentSidebar());
+
+        // Without a theme value the setting starts off, at 80%.
+        QTemporaryDir fresh;
+        Theme plain(fresh.path());
+        QVERIFY(!plain.transparentSidebar());
+        QCOMPARE(plain.sidebarOpacitySetting(), 0.8);
+        QCOMPARE(plain.sidebarOpacity(), 1.0);
     }
 
     void sidebarOpacityReadsLikeGtk()

@@ -7,7 +7,9 @@ Rectangle {
     id: root
 
     signal opened(string asin)
-    signal menu()
+    // From the main menu.
+    signal preferences()
+    signal shortcuts()
 
     readonly property bool searching: search.activeFocus
 
@@ -48,10 +50,45 @@ Rectangle {
             }
             end: [
                 AdwButton {
+                    id: menuButton
                     flat: true
                     iconName: "open-menu-symbolic"
                     tip: qsTr("Main menu")
-                    onClicked: root.menu()
+                    onClicked: mainMenu.open()
+
+                    // A libadwaita popover menu under the button.
+                    Popup {
+                        id: mainMenu
+                        y: menuButton.height + 4
+                        x: menuButton.width - width
+                        padding: 6
+                        background: Rectangle {
+                            radius: 12
+                            color: theme.popover
+                            border.width: 1
+                            border.color: Qt.rgba(0, 0, 0.02, 0.10)
+                        }
+                        contentItem: Column {
+                            spacing: 0
+                            Repeater {
+                                model: [
+                                    [qsTr("Preferences"), function() { root.preferences() }],
+                                    [qsTr("Keyboard Shortcuts"), function() { root.shortcuts() }],
+                                ]
+                                delegate: Rectangle {
+                                    id: item
+                                    required property var modelData
+                                    width: Math.max(180, label.implicitWidth + 24)
+                                    height: 34
+                                    radius: 6
+                                    color: hover.hovered ? Qt.alpha(theme.foreground, 0.07) : "transparent"
+                                    Label { id: label; anchors.verticalCenter: parent.verticalCenter; x: 12; text: item.modelData[0] }
+                                    HoverHandler { id: hover }
+                                    TapHandler { onTapped: { mainMenu.close(); item.modelData[1]() } }
+                                }
+                            }
+                        }
+                    }
                 },
                 CloseButton {}
             ]

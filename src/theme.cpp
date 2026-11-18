@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QStyleHints>
 #include <cmath>
 
@@ -243,7 +244,11 @@ double Theme::sidebarOpacityIn(const QString &css) {
 
 Theme::Theme(const QString &directory, QObject *parent)
     : QObject(parent),
-      m_directory(directory.isEmpty() ? QDir::homePath() + "/.local/state/omarchy/current" : directory) {
+      m_directory(directory.isEmpty() ? QDir::homePath() + "/.local/state/omarchy/current" : directory),
+      m_settings(directory.isEmpty()
+                     ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/skald/skald.ini"
+                     : directory + "/skald.ini",
+                 QSettings::IniFormat) {
     m_debounce.setSingleShot(true);
     m_debounce.setInterval(80);
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] { m_debounce.start(); });
@@ -252,6 +257,44 @@ Theme::Theme(const QString &directory, QObject *parent)
     if (qGuiApp)
         connect(qGuiApp->styleHints(), &QStyleHints::colorSchemeChanged, this, &Theme::reload);
     reload();
+    loadSidebarSetting();
+}
+
+// The first launch with the setting adopts what the theme's skald.css used to
+// decide, so a see-through sidebar stays see-through; after that the theme
+// has no say.
+void Theme::loadSidebarSetting() {
+    if (!m_settings.contains("transparentSidebar")) {
+        if (m_themeSidebarOpacity < 1) {
+            m_transparentSidebar = true;
+            m_sidebarOpacitySetting = m_themeSidebarOpacity;
+        }
+        m_settings.setValue("transparentSidebar", m_transparentSidebar);
+        m_settings.setValue("sidebarOpacity", m_sidebarOpacitySetting);
+        return;
+    }
+    m_transparentSidebar = m_settings.value("transparentSidebar").toBool();
+    bool ok = false;
+    const double opacity = m_settings.value("sidebarOpacity", 0.8).toDouble(&ok);
+    m_sidebarOpacitySetting = ok && std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 0.8;
+}
+
+void Theme::setTransparentSidebar(bool transparent) {
+    if (transparent == m_transparentSidebar)
+        return;
+    m_transparentSidebar = transparent;
+    m_settings.setValue("transparentSidebar", transparent);
+    emit changed();
+}
+
+void Theme::setSidebarOpacitySetting(double opacity) {
+    // Two places, as the slider shows it.
+    opacity = std::round(std::clamp(opacity, 0.0, 1.0) * 100) / 100;
+    if (opacity == m_sidebarOpacitySetting)
+        return;
+    m_sidebarOpacitySetting = opacity;
+    m_settings.setValue("sidebarOpacity", opacity);
+    emit changed();
 }
 
 QColor Theme::color(const QString &name) const {
@@ -278,12 +321,11 @@ void Theme::reload() {
     if (own.contains("--accent-bg-color") && !own.contains("--accent-fg-color"))
         variables.insert("--accent-fg-color", readableOn(variables.value("--accent-bg-color")));
 
-    const double opacity = sidebarOpacityIn(css);
-    if (variables == m_variables && light == !m_dark && opacity == m_sidebarOpacity)
+    m_themeSidebarOpacity = sidebarOpacityIn(css);
+    if (variables == m_variables && light == !m_dark)
         return;
     m_variables = variables;
     m_dark = !light;
-    m_sidebarOpacity = opacity;
     emit changed();
 }
 

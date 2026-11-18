@@ -5,6 +5,8 @@
         <file alias="PlayerPage.qml">PlayerPage.qml</file>
         <file alias="NowPlayingBar.qml">NowPlayingBar.qml</file>
         <file alias="HelpOverlay.qml">HelpOverlay.qml</file>
+        <file alias="PreferencesDialog.qml">PreferencesDialog.qml</file>
+        <file alias="AdwSwitch.qml">AdwSwitch.qml</file>
         <file alias="AdwButton.qml">AdwButton.qml</file>
         <file alias="AdwSlider.qml">AdwSlider.qml</file>
         <file alias="CloseButton.qml">CloseButton.qml</file>
